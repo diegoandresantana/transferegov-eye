@@ -40,125 +40,97 @@ class TEDMonitor:
     
     def run_full_sync(self) -> Dict[str, Any]:
         """
-        Executa sincronização completa de todos os TEDs.
-        
-        Returns:
-            Dicionário com resultados da sincronização
+        Executa sincronização completa de todos os TEDs do IPEA.
         """
-        logger.info("Iniciando sincronização completa...")
+        logger.info("Iniciando sincronização completa (todos os registros IPEA)...")
         start_time = datetime.now()
-        
+
         total_processed = 0
-        total_ipea = 0
         errors = 0
-        
+
         try:
-            # Iterar sobre todos os TEDs da API
-            for ted_data in self.api_client.fetch_all_paginated():
+            for ted_data in self.api_client.fetch_by_ipea():
                 total_processed += 1
-                
-                # Verificar se é do IPEA
-                if self.filter.is_from_ipea(ted_data):
-                    total_ipea += 1
-                    
-                    # Converter para modelo TED
-                    ted = TED.from_dict(ted_data)
-                    
-                    # Salvar no banco
-                    if not self.storage.save_processed(ted):
-                        errors += 1
-                    
-                    # Salvar raw (opcional, pode ser desativado para economizar espaço)
-                    # self.storage.save_raw(ted_data)
-                
-                # Log de progresso a cada 1000 registros
-                if total_processed % 1000 == 0:
-                    logger.info(f"Processados {total_processed} TEDs, {total_ipea} do IPEA")
-            
+                ted = TED.from_dict(ted_data)
+                if not self.storage.save_processed(ted):
+                    errors += 1
+
+                if total_processed % 100 == 0:
+                    logger.info(f"Processados {total_processed} TEDs do IPEA")
+
             end_time = datetime.now()
             duration = (end_time - start_time).total_seconds()
-            
+
             result = {
                 'success': True,
                 'total_processed': total_processed,
-                'total_ipea': total_ipea,
+                'total_ipea': total_processed,
                 'errors': errors,
                 'duration_seconds': duration,
                 'timestamp': end_time.isoformat()
             }
-            
-            logger.info(f"Sincronização completa: {total_ipea} TEDs do IPEA em {duration:.2f}s")
+
+            logger.info(f"Sincronização completa: {total_processed} TEDs em {duration:.2f}s")
             return result
-            
+
         except Exception as e:
             logger.error(f"Erro na sincronização: {e}", exc_info=True)
             return {
                 'success': False,
                 'error': str(e),
                 'total_processed': total_processed,
-                'total_ipea': total_ipea
+                'total_ipea': total_processed
             }
     
     def run_incremental_sync(self, days_back: int = 7) -> Dict[str, Any]:
         """
-        Executa sincronização incremental (últimos N dias).
-        
-        Args:
-            days_back: Número de dias para trás para buscar
-        
-        Returns:
-            Dicionário com resultados da sincronização
+        Executa sincronização incremental do IPEA (últimos N dias).
+        Filtra diretamente na API — não baixa registros de outros órgãos.
         """
         from datetime import timedelta
-        
+
         logger.info(f"Iniciando sincronização incremental (últimos {days_back} dias)...")
         start_time = datetime.now()
-        
+
         end_date = datetime.now().date()
         start_date = end_date - timedelta(days=days_back)
-        
+
         total_processed = 0
-        total_ipea = 0
         errors = 0
-        
+
         try:
-            # Buscar TEDs por faixa de datas
-            for ted_data in self.api_client.fetch_by_date_range(
+            for ted_data in self.api_client.fetch_by_ipea(
                 start_date=start_date.isoformat(),
                 end_date=end_date.isoformat()
             ):
                 total_processed += 1
-                
-                if self.filter.is_from_ipea(ted_data):
-                    total_ipea += 1
-                    ted = TED.from_dict(ted_data)
-                    
-                    if not self.storage.save_processed(ted):
-                        errors += 1
-            
+                ted = TED.from_dict(ted_data)
+                if not self.storage.save_processed(ted):
+                    errors += 1
+
             end_time = datetime.now()
             duration = (end_time - start_time).total_seconds()
-            
+
             result = {
                 'success': True,
                 'period': f"{start_date} a {end_date}",
                 'total_processed': total_processed,
-                'total_ipea': total_ipea,
+                'total_ipea': total_processed,
                 'errors': errors,
                 'duration_seconds': duration,
                 'timestamp': end_time.isoformat()
             }
-            
-            logger.info(f"Sincronização incremental: {total_ipea} TEDs do IPEA em {duration:.2f}s")
+
+            logger.info(f"Sincronização incremental: {total_processed} TEDs do IPEA em {duration:.2f}s")
             return result
-            
+
         except Exception as e:
             logger.error(f"Erro na sincronização incremental: {e}", exc_info=True)
             return {
                 'success': False,
                 'error': str(e),
                 'total_processed': total_processed,
-                'total_ipea': total_ipea
+                'total_ipea': total_processed
             }
     
     def get_summary(self) -> Dict[str, Any]:

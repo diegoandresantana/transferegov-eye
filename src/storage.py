@@ -32,21 +32,24 @@ class TED:
     
     @classmethod
     def from_dict(cls, data: Dict) -> 'TED':
-        """Cria instância TED a partir de dicionário da API."""
+        """
+        Cria instância TED a partir de um registro da API PostgREST do Transferegov.
+        Campos reais da tabela ted/plano_acao.
+        """
         return cls(
-            id=str(data.get('id', data.get('numero', ''))),
-            numero=data.get('numero', ''),
-            data_emissao=data.get('dataEmissao', data.get('data')),
-            valor=float(data.get('valor', 0)) if data.get('valor') else None,
-            orgao_repassador=data.get('orgaoRepassador', data.get('nomeOrgaoRepassador')),
-            codigo_orgao_repassador=data.get('codigoOrgaoRepassador'),
-            orgao_beneficiario=data.get('orgaoBeneficiario', data.get('nomeOrgaoBeneficiario')),
-            codigo_orgao_beneficiario=data.get('codigoOrgaoBeneficiario'),
-            descricao=data.get('descricao', data.get('objeto', data.get('finalidade'))),
-            modalidade=data.get('modalidade', data.get('tipoTransferencia')),
-            situacao=data.get('situacao', data.get('status')),
-            data_situacao=data.get('dataSituacao', data.get('dataStatus')),
-            historico=data.get('historico', data.get('historicos', [])),
+            id=str(data.get('id_plano_acao', data.get('id', ''))),
+            numero=str(data.get('sq_instrumento', data.get('numero', ''))),
+            data_emissao=data.get('dt_inicio_vigencia', data.get('data_emissao')),
+            valor=float(data.get('vl_total_plano_acao', data.get('valor', 0)) or 0),
+            orgao_repassador=None,  # campo não existe diretamente em plano_acao
+            codigo_orgao_repassador=None,
+            orgao_beneficiario=data.get('unidade_descentralizada', data.get('orgao_beneficiario')),
+            codigo_orgao_beneficiario=data.get('sigla_unidade_descentralizada', data.get('codigo_orgao_beneficiario')),
+            descricao=data.get('tx_objeto_plano_acao', data.get('descricao')),
+            modalidade='TED',
+            situacao=data.get('tx_situacao_plano_acao', data.get('situacao')),
+            data_situacao=data.get('dt_fim_vigencia', data.get('data_situacao')),
+            historico=data.get('historico', []),
             data_coleta=datetime.now().isoformat()
         )
     
