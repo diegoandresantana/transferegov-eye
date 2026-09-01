@@ -1,262 +1,861 @@
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Monitor TED - IPEA</title>
-    <!-- Bootstrap CSS -->
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-    <!-- Chart.js -->
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <style>
-        body { background-color: #f8f9fa; }
-        .card-stat { border: none; border-radius: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); transition: transform 0.2s; }
-        .card-stat:hover { transform: translateY(-5px); }
-        .stat-value { font-size: 2rem; font-weight: bold; color: #0d6efd; }
-        .chart-container { position: relative; height: 300px; width: 100%; }
-        #loading { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(255,255,255,0.8); z-index: 9999; text-align: center; padding-top: 20%; }
-    </style>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Monitor TED IPEA</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:       #0f1117;
+      --surface:  #1a1d27;
+      --border:   #2a2d3e;
+      --accent:   #4f8ef7;
+      --accent2:  #7c5cbf;
+      --green:    #22c55e;
+      --yellow:   #eab308;
+      --red:      #ef4444;
+      --text:     #e2e8f0;
+      --muted:    #64748b;
+      --radius:   10px;
+    }
+
+    body {
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+    }
+
+    /* ── Header ─────────────────────────────────────────────── */
+    header {
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 16px 28px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      flex-wrap: wrap;
+    }
+    header h1 { font-size: 1.1rem; font-weight: 700; letter-spacing: .02em; }
+    header h1 span { color: var(--accent); }
+    .header-actions { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+
+    #sync-btn {
+      background: var(--accent);
+      color: #fff;
+      border: none;
+      border-radius: 6px;
+      padding: 8px 18px;
+      font-size: .85rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: opacity .2s;
+    }
+    #sync-btn:disabled { opacity: .5; cursor: not-allowed; }
+
+    #sync-status {
+      font-size: .8rem;
+      color: var(--muted);
+    }
+
+    /* ── Layout ──────────────────────────────────────────────── */
+    main { padding: 24px 28px; max-width: 1400px; margin: 0 auto; }
+
+    /* ── KPI cards ───────────────────────────────────────────── */
+    .kpi-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 16px;
+      margin-bottom: 24px;
+    }
+    .kpi {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 20px;
+    }
+    .kpi-label { font-size: .75rem; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; }
+    .kpi-value { font-size: 1.8rem; font-weight: 700; margin: 6px 0 2px; }
+    .kpi-sub   { font-size: .75rem; color: var(--muted); }
+
+    /* ── Charts row ──────────────────────────────────────────── */
+    .charts-grid {
+      display: grid;
+      grid-template-columns: 2fr 1fr 1fr;
+      gap: 16px;
+      margin-bottom: 24px;
+    }
+    @media (max-width: 1000px) { .charts-grid { grid-template-columns: 1fr; } }
+
+    .chart-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 20px;
+    }
+    .chart-card h3 { font-size: .85rem; font-weight: 600; color: var(--muted); margin-bottom: 14px; text-transform: uppercase; letter-spacing: .05em; }
+    .chart-card canvas { max-height: 220px; }
+
+    /* ── Filtros ─────────────────────────────────────────────── */
+    .filters {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-bottom: 16px;
+      align-items: center;
+    }
+    .filters input, .filters select {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--text);
+      padding: 7px 12px;
+      font-size: .85rem;
+    }
+    .filters input { flex: 1; min-width: 220px; }
+    .filters label { font-size: .8rem; color: var(--muted); }
+
+    /* ── Tabela ──────────────────────────────────────────────── */
+    .table-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+      margin-bottom: 24px;
+    }
+    .table-card-header {
+      padding: 16px 20px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+    .table-card-header h2 { font-size: .95rem; font-weight: 600; }
+    #total-label { font-size: .8rem; color: var(--muted); }
+
+    .table-wrap { overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; font-size: .83rem; }
+    thead th {
+      background: var(--bg);
+      padding: 10px 14px;
+      text-align: left;
+      font-size: .73rem;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: .05em;
+      white-space: nowrap;
+    }
+    tbody tr { border-bottom: 1px solid var(--border); cursor: pointer; transition: background .15s; }
+    tbody tr:last-child { border-bottom: none; }
+    tbody tr:hover { background: rgba(79,142,247,.07); }
+    td { padding: 10px 14px; vertical-align: middle; }
+
+    .badge {
+      display: inline-block;
+      padding: 2px 9px;
+      border-radius: 99px;
+      font-size: .72rem;
+      font-weight: 600;
+      white-space: nowrap;
+    }
+    .badge-green  { background: rgba(34,197,94,.15);  color: var(--green); }
+    .badge-blue   { background: rgba(79,142,247,.15); color: var(--accent); }
+    .badge-yellow { background: rgba(234,179,8,.15);  color: var(--yellow); }
+    .badge-red    { background: rgba(239,68,68,.15);  color: var(--red); }
+    .badge-gray   { background: rgba(100,116,139,.15);color: var(--muted); }
+
+    /* Paginação */
+    .pagination {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      gap: 8px;
+      padding: 16px;
+    }
+    .pagination button {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      color: var(--text);
+      border-radius: 6px;
+      padding: 6px 14px;
+      cursor: pointer;
+      font-size: .82rem;
+    }
+    .pagination button:disabled { opacity: .35; cursor: not-allowed; }
+    .pagination button.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+    #page-info { font-size: .82rem; color: var(--muted); }
+
+    /* ── Modal de detalhe ────────────────────────────────────── */
+    #modal-overlay {
+      display: none;
+      position: fixed; inset: 0;
+      background: rgba(0,0,0,.65);
+      z-index: 100;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+    #modal-overlay.open { display: flex; }
+    #modal {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      width: 100%;
+      max-width: 760px;
+      max-height: 88vh;
+      overflow-y: auto;
+      padding: 28px;
+      position: relative;
+    }
+    #modal-close {
+      position: absolute;
+      top: 16px; right: 18px;
+      background: none; border: none;
+      color: var(--muted); font-size: 1.3rem;
+      cursor: pointer; line-height: 1;
+    }
+    #modal h2 { font-size: 1rem; font-weight: 700; margin-bottom: 18px; padding-right: 30px; line-height: 1.4; }
+
+    .detail-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px 20px;
+      margin-bottom: 20px;
+    }
+    @media (max-width: 600px) { .detail-grid { grid-template-columns: 1fr; } }
+    .detail-item label { font-size: .72rem; color: var(--muted); display: block; margin-bottom: 2px; text-transform: uppercase; }
+    .detail-item p { font-size: .85rem; }
+
+    .section-title {
+      font-size: .78rem;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: .06em;
+      margin: 20px 0 10px;
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 6px;
+    }
+
+    .meta-item {
+      background: var(--bg);
+      border-radius: 6px;
+      padding: 12px;
+      margin-bottom: 8px;
+    }
+    .meta-item p { font-size: .82rem; margin-top: 4px; color: var(--muted); }
+    .meta-item strong { font-size: .85rem; }
+
+    .nota-list, .termo-list, .pf-list {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .nota-item, .pf-item {
+      background: var(--bg);
+      border-radius: 6px;
+      padding: 10px 12px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 6px;
+      font-size: .82rem;
+    }
+
+    .objeto-box {
+      background: var(--bg);
+      border-radius: 6px;
+      padding: 12px;
+      font-size: .83rem;
+      line-height: 1.6;
+      color: var(--text);
+      max-height: 180px;
+      overflow-y: auto;
+    }
+
+    /* ── Empty / loading ─────────────────────────────────────── */
+    .empty-state {
+      text-align: center;
+      padding: 48px 20px;
+      color: var(--muted);
+    }
+    .empty-state p { margin-top: 8px; font-size: .85rem; }
+    .spinner {
+      display: inline-block;
+      width: 20px; height: 20px;
+      border: 2px solid var(--border);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin .7s linear infinite;
+      vertical-align: middle;
+      margin-right: 8px;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .toast {
+      position: fixed;
+      bottom: 24px; right: 24px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 12px 18px;
+      font-size: .85rem;
+      z-index: 200;
+      max-width: 340px;
+      box-shadow: 0 4px 20px rgba(0,0,0,.4);
+      opacity: 0;
+      transform: translateY(10px);
+      transition: opacity .3s, transform .3s;
+      pointer-events: none;
+    }
+    .toast.show { opacity: 1; transform: translateY(0); }
+  </style>
 </head>
 <body>
 
-    <!-- Loading Spinner -->
-    <div id="loading">
-        <div class="spinner-border text-primary" role="status">
-            <span class="visually-hidden">Carregando...</span>
-        </div>
-        <h3 class="mt-3">Atualizando dados do IPEA...</h3>
+<header>
+  <h1>Monitor <span>TED</span> IPEA</h1>
+  <div class="header-actions">
+    <span id="sync-status">Carregando...</span>
+    <button id="sync-btn" onclick="triggerSync()">⟳ Sincronizar</button>
+  </div>
+</header>
+
+<main>
+
+  <!-- KPIs -->
+  <div class="kpi-grid">
+    <div class="kpi">
+      <div class="kpi-label">Total de Planos</div>
+      <div class="kpi-value" id="kpi-total">—</div>
+      <div class="kpi-sub">TEDs do IPEA</div>
+    </div>
+    <div class="kpi">
+      <div class="kpi-label">Valor Total</div>
+      <div class="kpi-value" id="kpi-valor">—</div>
+      <div class="kpi-sub">soma dos planos</div>
+    </div>
+    <div class="kpi">
+      <div class="kpi-label">Em Execução</div>
+      <div class="kpi-value" id="kpi-execucao" style="color:var(--green)">—</div>
+      <div class="kpi-sub">situação EM_EXECUCAO</div>
+    </div>
+    <div class="kpi">
+      <div class="kpi-label">Última Sincronização</div>
+      <div class="kpi-value" id="kpi-sync" style="font-size:1rem">—</div>
+      <div class="kpi-sub" id="kpi-sync-status">—</div>
+    </div>
+  </div>
+
+  <!-- Gráficos -->
+  <div class="charts-grid">
+    <div class="chart-card">
+      <h3>Valor dos Planos por Mês de Início</h3>
+      <canvas id="chart-timeline"></canvas>
+    </div>
+    <div class="chart-card">
+      <h3>Situação dos Planos</h3>
+      <canvas id="chart-situacao"></canvas>
+    </div>
+    <div class="chart-card">
+      <h3>Valor por Ano</h3>
+      <canvas id="chart-ano"></canvas>
+    </div>
+  </div>
+
+  <!-- Tabela -->
+  <div class="table-card">
+    <div class="table-card-header">
+      <h2>Planos de Ação</h2>
+      <span id="total-label">—</span>
     </div>
 
-    <!-- Navbar -->
-    <nav class="navbar navbar-dark bg-primary mb-4">
-        <div class="container-fluid">
-            <span class="navbar-brand mb-0 h1">🏛️ Monitor TED - IPEA</span>
-            <button class="btn btn-light btn-sm" onclick="syncData()">
-                🔄 Sincronizar Agora
-            </button>
-        </div>
-    </nav>
-
-    <div class="container-fluid px-4">
-        <!-- Cards de Estatísticas -->
-        <div class="row g-4 mb-4">
-            <div class="col-md-3">
-                <div class="card card-stat p-3 bg-white">
-                    <h6 class="text-muted">Total de TEDs</h6>
-                    <div class="stat-value" id="total-teds">-</div>
-                </div>
-            </div>
-            <div class="col-md-3">
-                <div class="card card-stat p-3 bg-white">
-                    <h6 class="text-muted">Valor Total Repassado</h6>
-                    <div class="stat-value text-success" id="total-valor">-</div>
-                </div>
-            </div>
-            <div class="col-md-3">
-                <div class="card card-stat p-3 bg-white">
-                    <h6 class="text-muted">Última Atualização</h6>
-                    <div class="stat-value fs-6 text-dark mt-2" id="last-update">-</div>
-                </div>
-            </div>
-            <div class="col-md-3">
-                <div class="card card-stat p-3 bg-white">
-                    <h6 class="text-muted">Status da API</h6>
-                    <div class="stat-value fs-6 text-success mt-2">🟢 Online</div>
-                </div>
-            </div>
-        </div>
-
-        <!-- Gráficos -->
-        <div class="row g-4 mb-4">
-            <div class="col-md-8">
-                <div class="card card-stat p-3 bg-white">
-                    <h5>📈 Evolução Mensal de Repasses</h5>
-                    <div class="chart-container">
-                        <canvas id="chartEvolucao"></canvas>
-                    </div>
-                </div>
-            </div>
-            <div class="col-md-4">
-                <div class="card card-stat p-3 bg-white">
-                    <h5>💰 Top 5 Beneficiários</h5>
-                    <div class="chart-container">
-                        <canvas id="chartBeneficiarios"></canvas>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <!-- Tabela de Dados -->
-        <div class="card card-stat p-3 bg-white">
-            <div class="d-flex justify-content-between align-items-center mb-3">
-                <h5>📋 Últimas Transferências</h5>
-                <input type="text" id="searchInput" class="form-control w-25" placeholder="Buscar por beneficiário..." onkeyup="filterTable()">
-            </div>
-            <div class="table-responsive">
-                <table class="table table-hover" id="tedTable">
-                    <thead class="table-light">
-                        <tr>
-                            <th>Data</th>
-                            <th>Beneficiário</th>
-                            <th>Valor (R$)</th>
-                            <th>Descrição</th>
-                            <th>Status</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <!-- Dados inseridos via JS -->
-                    </tbody>
-                </table>
-            </div>
-        </div>
+    <!-- Filtros -->
+    <div class="filters" style="padding:12px 20px; border-bottom:1px solid var(--border)">
+      <input id="filter-busca" type="text" placeholder="Buscar por objeto ou instrumento..." oninput="debounceLoad()" />
+      <label>
+        Ano
+        <select id="filter-ano" onchange="loadTeds()">
+          <option value="">Todos</option>
+        </select>
+      </label>
+      <label>
+        Situação
+        <select id="filter-situacao" onchange="loadTeds()">
+          <option value="">Todas</option>
+        </select>
+      </label>
     </div>
 
-    <!-- Scripts -->
-    <script>
-        let chartEvolucaoInstance = null;
-        let chartBeneficiariosInstance = null;
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Instrumento</th>
+            <th>Ano</th>
+            <th>Executor (Descentralizada)</th>
+            <th>Unidade Resp. Execução</th>
+            <th>Valor Total</th>
+            <th>Vigência</th>
+            <th>Situação</th>
+            <th>Termo</th>
+          </tr>
+        </thead>
+        <tbody id="teds-tbody">
+          <tr><td colspan="8"><div class="empty-state"><span class="spinner"></span> Carregando...</div></td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="pagination" id="pagination"></div>
+  </div>
 
-        // Formatar Moeda
-        const formatBRL = (value) => {
-            return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value);
-        };
+</main>
 
-        // Formatar Data
-        const formatDate = (dateString) => {
-            if (!dateString) return '-';
-            const date = new Date(dateString);
-            return date.toLocaleDateString('pt-BR');
-        };
+<!-- Modal detalhe -->
+<div id="modal-overlay" onclick="closeModal(event)">
+  <div id="modal">
+    <button id="modal-close" onclick="closeModal()">&times;</button>
+    <h2 id="modal-title">—</h2>
+    <div id="modal-body"></div>
+  </div>
+</div>
 
-        // Carregar Dados
-        async function loadData() {
-            try {
-                const response = await fetch('/api/stats');
-                const stats = await response.json();
+<div class="toast" id="toast"></div>
 
-                // Atualizar Cards
-                document.getElementById('total-teds').innerText = stats.total_teds || 0;
-                document.getElementById('total-valor').innerText = formatBRL(stats.total_valor || 0);
-                document.getElementById('last-update').innerText = stats.last_update ? new Date(stats.last_update).toLocaleString('pt-BR') : 'Nunca';
+<script>
+// ── Globals ──────────────────────────────────────────────────────────
+let statsData   = null;
+let chartTimeline = null, chartSituacao = null, chartAno = null;
+let currentPage = 0;
+const PAGE_SIZE = 50;
+let totalRecords = 0;
+let syncPollInterval = null;
+let debounceTimer = null;
 
-                // Carregar Tabela
-                loadTable(stats.recent_teds);
+const SITUACAO_LABEL = {
+  'APROVADO':                    ['Aprovado',        'badge-blue'],
+  'EM_EXECUCAO':                 ['Em Execução',     'badge-green'],
+  'CUMPRIMENTO_OBJETO_INICIADO': ['Obj. Iniciado',   'badge-green'],
+  'CONCLUIDO':                   ['Concluído',       'badge-gray'],
+  'CANCELADO':                   ['Cancelado',       'badge-red'],
+  'RESCINDIDO':                  ['Rescindido',      'badge-red'],
+  'AGUARDANDO_EXECUCAO':         ['Aguardando',      'badge-yellow'],
+  'PRESTACAO_CONTAS':            ['Prest. Contas',   'badge-yellow'],
+};
 
-                // Carregar Gráficos
-                renderCharts(stats.chart_data);
+function situacaoBadge(s) {
+  if (!s) return '<span class="badge badge-gray">—</span>';
+  const [label, cls] = SITUACAO_LABEL[s] || [s.replace(/_/g,' '), 'badge-gray'];
+  return `<span class="badge ${cls}">${label}</span>`;
+}
 
-            } catch (error) {
-                console.error('Erro ao carregar dados:', error);
-                alert('Erro ao conectar com a API. Verifique se o backend está rodando.');
-            }
-        }
+function fmtMoeda(v) {
+  if (v == null || v === '') return '—';
+  return new Intl.NumberFormat('pt-BR', { style:'currency', currency:'BRL', maximumFractionDigits:0 }).format(v);
+}
 
-        // Carregar Tabela
-        function loadTable(teds) {
-            const tbody = document.querySelector('#tedTable tbody');
-            tbody.innerHTML = '';
-            
-            if (!teds || teds.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="5" class="text-center">Nenhum dado encontrado. Clique em "Sincronizar Agora".</td></tr>';
-                return;
-            }
+function fmtData(d) {
+  if (!d) return '—';
+  const [y,m,day] = d.split('T')[0].split('-');
+  return `${day}/${m}/${y}`;
+}
 
-            teds.forEach(ted => {
-                const row = `
-                    <tr>
-                        <td>${formatDate(ted.data_transacao)}</td>
-                        <td>${ted.nome_beneficiario || 'Não informado'}</td>
-                        <td>${formatBRL(ted.valor_repasse)}</td>
-                        <td class="text-truncate" style="max-width: 300px;" title="${ted.descricao}">${ted.descricao || '-'}</td>
-                        <td><span class="badge bg-success">${ted.status || 'Concluído'}</span></td>
-                    </tr>
-                `;
-                tbody.innerHTML += row;
-            });
-        }
+function showToast(msg, ms = 3500) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), ms);
+}
 
-        // Filtrar Tabela
-        function filterTable() {
-            const input = document.getElementById("searchInput");
-            const filter = input.value.toUpperCase();
-            const table = document.getElementById("tedTable");
-            const tr = table.getElementsByTagName("tr");
+// ── Stats ─────────────────────────────────────────────────────────────
+async function loadStats() {
+  try {
+    const r = await fetch('/api/stats');
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    statsData = await r.json();
 
-            for (let i = 1; i < tr.length; i++) {
-                const td = tr[i].getElementsByTagName("td")[1]; // Coluna Beneficiário
-                if (td) {
-                    const txtValue = td.textContent || td.innerText;
-                    tr[i].style.display = txtValue.toUpperCase().indexOf(filter) > -1 ? "" : "none";
-                }
-            }
-        }
+    // KPIs
+    document.getElementById('kpi-total').textContent = statsData.total_planos ?? 0;
+    document.getElementById('kpi-valor').textContent = fmtMoeda(statsData.valor_total);
 
-        // Renderizar Gráficos
-        function renderCharts(data) {
-            // Gráfico de Evolução (Linha)
-            const ctxEvolucao = document.getElementById('chartEvolucao').getContext('2d');
-            if (chartEvolucaoInstance) chartEvolucaoInstance.destroy();
-            
-            chartEvolucaoInstance = new Chart(ctxEvolucao, {
-                type: 'line',
-                data: {
-                    labels: data.meses || [],
-                    datasets: [{
-                        label: 'Valor Repassado (R$)',
-                        data: data.valores_mes || [],
-                        borderColor: '#0d6efd',
-                        backgroundColor: 'rgba(13, 110, 253, 0.1)',
-                        fill: true,
-                        tension: 0.4
-                    }]
-                },
-                options: { responsive: true, maintainAspectRatio: false }
-            });
+    const emExec = (statsData.charts.por_situacao.labels || []).reduce((acc, lbl, i) => {
+      if (lbl === 'EM_EXECUCAO' || lbl === 'CUMPRIMENTO_OBJETO_INICIADO')
+        acc += statsData.charts.por_situacao.quantidades[i];
+      return acc;
+    }, 0);
+    document.getElementById('kpi-execucao').textContent = emExec;
 
-            // Gráfico de Beneficiários (Barra Horizontal)
-            const ctxBen = document.getElementById('chartBeneficiarios').getContext('2d');
-            if (chartBeneficiariosInstance) chartBeneficiariosInstance.destroy();
+    const ls = statsData.last_sync;
+    if (ls) {
+      document.getElementById('kpi-sync').textContent = fmtData(ls.concluido_em);
+      document.getElementById('kpi-sync-status').textContent =
+        ls.status === 'sucesso' ? `✓ ${ls.total_planos} planos` : `✗ ${ls.mensagem}`;
+    } else {
+      document.getElementById('kpi-sync').textContent = 'Nunca';
+      document.getElementById('kpi-sync-status').textContent = 'Clique em Sincronizar';
+    }
 
-            chartBeneficiariosInstance = new Chart(ctxBen, {
-                type: 'bar',
-                data: {
-                    labels: data.top_beneficiarios_labels || [],
-                    datasets: [{
-                        label: 'Total Recebido',
-                        data: data.top_beneficiarios_values || [],
-                        backgroundColor: '#198754',
-                        borderRadius: 5
-                    }]
-                },
-                options: { 
-                    indexAxis: 'y',
-                    responsive: true, 
-                    maintainAspectRatio: false 
-                }
-            });
-        }
+    document.getElementById('sync-status').textContent =
+      statsData.ultima_atualizacao
+        ? `Dados de ${fmtData(statsData.ultima_atualizacao)}`
+        : 'Sem dados — sincronize';
 
-        // Sincronizar Dados
-        async function syncData() {
-            if (!confirm('Deseja iniciar uma nova sincronização com a API do governo? Isso pode levar alguns minutos.')) return;
+    renderCharts(statsData.charts);
+    populateFilters(statsData.charts);
+  } catch (e) {
+    document.getElementById('sync-status').textContent = 'Erro ao carregar stats';
+    console.error(e);
+  }
+}
 
-            document.getElementById('loading').style.display = 'block';
-            
-            try {
-                const response = await fetch('/api/sync', { method: 'POST' });
-                const result = await response.json();
-                
-                alert(`Sincronização concluída!\nNovos registros: ${result.new_records || 0}`);
-                loadData(); // Recarrega dashboard
-            } catch (error) {
-                alert('Erro na sincronização: ' + error.message);
-            } finally {
-                document.getElementById('loading').style.display = 'none';
-            }
-        }
+// ── Charts ────────────────────────────────────────────────────────────
+const CHART_DEFAULTS = {
+  responsive: true,
+  maintainAspectRatio: true,
+  plugins: { legend: { display: false } },
+  scales: {
+    x: { ticks: { color: '#64748b', font: { size: 10 } }, grid: { color: '#2a2d3e' } },
+    y: { ticks: { color: '#64748b', font: { size: 10 } }, grid: { color: '#2a2d3e' } },
+  },
+};
 
-        // Inicializar
-        document.addEventListener('DOMContentLoaded', loadData);
-    </script>
+function renderCharts(c) {
+  // Timeline
+  if (chartTimeline) chartTimeline.destroy();
+  chartTimeline = new Chart(document.getElementById('chart-timeline'), {
+    type: 'bar',
+    data: {
+      labels: c.timeline.meses,
+      datasets: [{
+        label: 'Valor (R$)',
+        data: c.timeline.valores,
+        backgroundColor: 'rgba(79,142,247,0.55)',
+        borderColor: 'rgba(79,142,247,1)',
+        borderWidth: 1,
+        borderRadius: 3,
+      }],
+    },
+    options: {
+      ...CHART_DEFAULTS,
+      plugins: {
+        ...CHART_DEFAULTS.plugins,
+        tooltip: {
+          callbacks: {
+            label: ctx => fmtMoeda(ctx.raw),
+          },
+        },
+      },
+    },
+  });
+
+  // Situação — doughnut
+  if (chartSituacao) chartSituacao.destroy();
+  const COLORS = ['#4f8ef7','#22c55e','#eab308','#ef4444','#7c5cbf','#06b6d4','#f97316','#64748b'];
+  chartSituacao = new Chart(document.getElementById('chart-situacao'), {
+    type: 'doughnut',
+    data: {
+      labels: c.por_situacao.labels.map(l => (SITUACAO_LABEL[l] || [l])[0]),
+      datasets: [{
+        data: c.por_situacao.quantidades,
+        backgroundColor: COLORS,
+        borderWidth: 0,
+      }],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: true,
+      cutout: '62%',
+      plugins: { legend: { display: true, position: 'bottom', labels: { color: '#64748b', font: { size: 10 }, boxWidth: 10 } } },
+    },
+  });
+
+  // Por ano — bar
+  if (chartAno) chartAno.destroy();
+  chartAno = new Chart(document.getElementById('chart-ano'), {
+    type: 'bar',
+    data: {
+      labels: c.por_ano.labels,
+      datasets: [{
+        label: 'Valor (R$)',
+        data: c.por_ano.valores,
+        backgroundColor: 'rgba(124,92,191,0.6)',
+        borderColor: 'rgba(124,92,191,1)',
+        borderWidth: 1,
+        borderRadius: 3,
+      }],
+    },
+    options: {
+      ...CHART_DEFAULTS,
+      plugins: {
+        ...CHART_DEFAULTS.plugins,
+        tooltip: { callbacks: { label: ctx => fmtMoeda(ctx.raw) } },
+      },
+    },
+  });
+}
+
+// ── Filtros dinâmicos ─────────────────────────────────────────────────
+function populateFilters(c) {
+  const selAno = document.getElementById('filter-ano');
+  const selSit = document.getElementById('filter-situacao');
+  const anos   = c.por_ano.labels.slice().sort();
+  const current_ano = selAno.value;
+  const current_sit = selSit.value;
+
+  selAno.innerHTML = '<option value="">Todos</option>' +
+    anos.map(a => `<option value="${a}"${a==current_ano?' selected':''}>${a}</option>`).join('');
+
+  selSit.innerHTML = '<option value="">Todas</option>' +
+    c.por_situacao.labels.map(s => {
+      const [label] = SITUACAO_LABEL[s] || [s];
+      return `<option value="${s}"${s==current_sit?' selected':''}>${label}</option>`;
+    }).join('');
+}
+
+// ── TEDs table ────────────────────────────────────────────────────────
+async function loadTeds(reset = true) {
+  if (reset) currentPage = 0;
+  const offset = currentPage * PAGE_SIZE;
+  const busca    = document.getElementById('filter-busca').value.trim();
+  const ano      = document.getElementById('filter-ano').value;
+  const situacao = document.getElementById('filter-situacao').value;
+
+  const params = new URLSearchParams({ limit: PAGE_SIZE, offset });
+  if (busca)    params.set('busca', busca);
+  if (ano)      params.set('ano', ano);
+  if (situacao) params.set('situacao', situacao);
+
+  const tbody = document.getElementById('teds-tbody');
+  tbody.innerHTML = `<tr><td colspan="8"><div class="empty-state"><span class="spinner"></span> Carregando...</div></td></tr>`;
+
+  try {
+    const r = await fetch(`/api/teds?${params}`);
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    const data = await r.json();
+    totalRecords = data.total;
+
+    document.getElementById('total-label').textContent =
+      `${totalRecords} plano${totalRecords !== 1 ? 's' : ''} encontrado${totalRecords !== 1 ? 's' : ''}`;
+
+    if (!data.items || data.items.length === 0) {
+      tbody.innerHTML = `<tr><td colspan="8"><div class="empty-state">
+        <strong>Nenhum plano encontrado.</strong>
+        <p>${totalRecords === 0 ? 'Clique em Sincronizar para buscar os dados.' : 'Tente outros filtros.'}</p>
+      </div></td></tr>`;
+      renderPagination();
+      return;
+    }
+
+    tbody.innerHTML = data.items.map(p => `
+      <tr onclick="openDetail(${p.id_plano_acao})">
+        <td><strong>${p.sq_instrumento || '—'}/${p.aa_instrumento || '—'}</strong></td>
+        <td>${p.aa_ano_plano_acao || '—'}</td>
+        <td title="${p.unidade_descentralizada || ''}">${p.sigla_unidade_descentralizada || '—'}</td>
+        <td title="${p.unidade_responsavel_execucao || ''}">${p.sigla_unidade_responsavel_execucao || '—'}</td>
+        <td>${fmtMoeda(p.vl_total_plano_acao)}</td>
+        <td style="white-space:nowrap">${fmtData(p.dt_inicio_vigencia)} → ${fmtData(p.dt_fim_vigencia)}</td>
+        <td>${situacaoBadge(p.tx_situacao_plano_acao)}</td>
+        <td>${situacaoBadge(p.tx_situacao_termo)}</td>
+      </tr>`).join('');
+
+    renderPagination();
+  } catch (e) {
+    tbody.innerHTML = `<tr><td colspan="8"><div class="empty-state">Erro ao carregar dados: ${e.message}</div></td></tr>`;
+  }
+}
+
+function renderPagination() {
+  const pages = Math.ceil(totalRecords / PAGE_SIZE);
+  const pag   = document.getElementById('pagination');
+  if (pages <= 1) { pag.innerHTML = ''; return; }
+
+  let html = `<button onclick="goPage(${currentPage - 1})" ${currentPage===0?'disabled':''}>‹</button>`;
+  const start = Math.max(0, currentPage - 2);
+  const end   = Math.min(pages - 1, currentPage + 2);
+  if (start > 0) html += `<button onclick="goPage(0)">1</button>${start > 1 ? '<span>…</span>' : ''}`;
+  for (let i = start; i <= end; i++) {
+    html += `<button onclick="goPage(${i})" class="${i===currentPage?'active':''}">${i+1}</button>`;
+  }
+  if (end < pages - 1) html += `${end < pages - 2 ? '<span>…</span>' : ''}<button onclick="goPage(${pages-1})">${pages}</button>`;
+  html += `<button onclick="goPage(${currentPage + 1})" ${currentPage>=pages-1?'disabled':''}>›</button>`;
+  html += `<span id="page-info">Página ${currentPage+1} de ${pages}</span>`;
+  pag.innerHTML = html;
+}
+
+function goPage(p) {
+  currentPage = p;
+  loadTeds(false);
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+function debounceLoad() {
+  clearTimeout(debounceTimer);
+  debounceTimer = setTimeout(() => loadTeds(), 400);
+}
+
+// ── Modal detalhe ─────────────────────────────────────────────────────
+async function openDetail(id) {
+  const overlay = document.getElementById('modal-overlay');
+  const body    = document.getElementById('modal-body');
+  const title   = document.getElementById('modal-title');
+  title.textContent = 'Carregando…';
+  body.innerHTML    = '<div class="empty-state"><span class="spinner"></span></div>';
+  overlay.classList.add('open');
+
+  try {
+    const r = await fetch(`/api/teds/${id}`);
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    const p = await r.json();
+
+    title.textContent = `${p.sq_instrumento || '—'}/${p.aa_instrumento || '—'} — ${p.unidade_descentralizada || 'IPEA'}`;
+
+    const termoSit  = p.termos?.[0]?.tx_situacao_termo;
+    const termoNum  = p.termos?.[0]?.tx_numero_ns_termo;
+
+    body.innerHTML = `
+      <div class="detail-grid">
+        <div class="detail-item"><label>Situação do Plano</label><p>${situacaoBadge(p.tx_situacao_plano_acao)}</p></div>
+        <div class="detail-item"><label>Situação do Termo</label><p>${situacaoBadge(termoSit)} ${termoNum ? `<small style="color:var(--muted)">${termoNum}</small>` : ''}</p></div>
+        <div class="detail-item"><label>Valor Total</label><p>${fmtMoeda(p.vl_total_plano_acao)}</p></div>
+        <div class="detail-item"><label>Valor Beneficiário Específico</label><p>${fmtMoeda(p.vl_beneficiario_especifico)}</p></div>
+        <div class="detail-item"><label>Início da Vigência</label><p>${fmtData(p.dt_inicio_vigencia)}</p></div>
+        <div class="detail-item"><label>Fim da Vigência</label><p>${fmtData(p.dt_fim_vigencia)}</p></div>
+        <div class="detail-item"><label>Unidade Descentralizada</label><p>${p.unidade_descentralizada || '—'}</p></div>
+        <div class="detail-item"><label>Resp. Execução</label><p>${p.unidade_responsavel_execucao || '—'}</p></div>
+        ${p.tx_nome_programa ? `<div class="detail-item" style="grid-column:1/-1"><label>Programa</label><p>${p.tx_nome_programa}</p></div>` : ''}
+      </div>
+
+      <div class="section-title">Objeto</div>
+      <div class="objeto-box">${p.tx_objeto_plano_acao || '—'}</div>
+
+      ${renderMetas(p.metas)}
+      ${renderNotas(p.notas_credito)}
+      ${renderPF(p.programacoes_financeiras)}
+    `;
+  } catch (e) {
+    body.innerHTML = `<div class="empty-state">Erro: ${e.message}</div>`;
+  }
+}
+
+function renderMetas(metas) {
+  if (!metas || metas.length === 0) return '';
+  return `
+    <div class="section-title">Metas (${metas.length})</div>
+    ${metas.map(m => `
+      <div class="meta-item">
+        <strong>${m.nr_numero_meta ? 'Meta ' + m.nr_numero_meta + ' — ' : ''}${m.tx_nome_meta || '—'}</strong>
+        ${m.tx_descricao_meta ? `<p>${m.tx_descricao_meta}</p>` : ''}
+        <p style="margin-top:4px">
+          ${m.dt_inicio_vigencia_meta ? `Início: ${fmtData(m.dt_inicio_vigencia_meta)}` : ''}
+          ${m.dt_fim_vigencia_meta ? ` &nbsp;|&nbsp; Fim: ${fmtData(m.dt_fim_vigencia_meta)}` : ''}
+          ${m.nr_quantidade_meta != null ? ` &nbsp;|&nbsp; Qtd: ${m.nr_quantidade_meta} ${m.tp_unidade_meta || ''}` : ''}
+        </p>
+      </div>`).join('')}
+  `;
+}
+
+function renderNotas(notas) {
+  if (!notas || notas.length === 0) return '';
+  return `
+    <div class="section-title">Notas de Crédito (${notas.length})</div>
+    <div class="nota-list">
+      ${notas.map(n => `
+        <div class="nota-item">
+          <span><strong>${n.tx_numero_nota || n.tx_minuta_nota || '—'}</strong></span>
+          <span>${situacaoBadge(n.tx_situacao_nota)}</span>
+          <span style="color:var(--muted)">${fmtData(n.dt_emissao_nota)}</span>
+        </div>`).join('')}
+    </div>
+  `;
+}
+
+function renderPF(pfs) {
+  if (!pfs || pfs.length === 0) return '';
+  return `
+    <div class="section-title">Programação Financeira (${pfs.length})</div>
+    <div class="pf-list">
+      ${pfs.map(pf => `
+        <div class="pf-item">
+          <span><strong>${pf.tx_numero_programacao || '—'}</strong></span>
+          <span>${situacaoBadge(pf.tx_situacao_programacao)}</span>
+          <span style="color:var(--muted)">${fmtData(pf.dh_recebimento_programacao)}</span>
+        </div>`).join('')}
+    </div>
+  `;
+}
+
+function closeModal(e) {
+  if (e && e.target !== document.getElementById('modal-overlay') &&
+      e.target !== document.getElementById('modal-close')) return;
+  document.getElementById('modal-overlay').classList.remove('open');
+}
+
+// ── Sync ──────────────────────────────────────────────────────────────
+async function triggerSync() {
+  const btn = document.getElementById('sync-btn');
+  btn.disabled = true;
+  document.getElementById('sync-status').innerHTML = '<span class="spinner"></span> Sincronizando…';
+  showToast('Sincronização iniciada em background…');
+
+  try {
+    const r = await fetch('/api/sync', { method: 'POST' });
+    const d = await r.json();
+    if (d.status === 'running') {
+      showToast('Já existe uma sincronização em andamento.');
+    }
+    startSyncPoll();
+  } catch (e) {
+    showToast('Erro ao iniciar sincronização: ' + e.message);
+    btn.disabled = false;
+  }
+}
+
+function startSyncPoll() {
+  if (syncPollInterval) return;
+  syncPollInterval = setInterval(async () => {
+    try {
+      const r = await fetch('/api/sync/status');
+      const d = await r.json();
+      if (!d.running) {
+        clearInterval(syncPollInterval);
+        syncPollInterval = null;
+        document.getElementById('sync-btn').disabled = false;
+        showToast(
+          d.last_sync?.status === 'sucesso'
+            ? `✓ Sync concluído — ${d.last_sync.total_planos} planos`
+            : `✗ Sync falhou: ${d.last_sync?.mensagem || '?'}`
+        );
+        await loadStats();
+        await loadTeds();
+      }
+    } catch (_) {}
+  }, 3000);
+}
+
+// ── Init ──────────────────────────────────────────────────────────────
+async function init() {
+  await loadStats();
+  await loadTeds();
+
+  // Verifica se um sync está em andamento (ex: reload de página)
+  try {
+    const r = await fetch('/api/sync/status');
+    const d = await r.json();
+    if (d.running) {
+      document.getElementById('sync-btn').disabled = true;
+      document.getElementById('sync-status').innerHTML = '<span class="spinner"></span> Sincronizando…';
+      startSyncPoll();
+    }
+  } catch (_) {}
+}
+
+document.addEventListener('DOMContentLoaded', init);
+</script>
 </body>
 </html>

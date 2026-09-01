@@ -13,13 +13,14 @@ class Settings:
     """Configurações principais da aplicação."""
 
     # API Transferência Gov (configurável via env)
+    # URL base real da API pública de dados abertos do Transferegov (PostgREST)
     API_BASE_URL: str = field(
         default_factory=lambda: os.getenv(
             "API_BASE_URL",
-            "https://www.gov.br/transferegov/pt-br/ferramentas-gestao/dados-abertos/api-modulo-ted"
+            "https://api.transferegov.gestao.gov.br"
         )
     )
-    API_ENDPOINT: str = "/api/ted"
+    API_ENDPOINT: str = "/ted/plano_acao"
     API_TIMEOUT: int = field(default_factory=lambda: int(os.getenv("API_TIMEOUT", "30")))
     API_MAX_RETRIES: int = field(default_factory=lambda: int(os.getenv("API_MAX_RETRIES", "3")))
     API_PAGE_SIZE: int = 100

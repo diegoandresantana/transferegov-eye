@@ -1,640 +1,546 @@
 """
-Armazenamento de dados TED - JSON e SQLite.
+Armazenamento dos dados TED do IPEA em SQLite.
+
+Modelos baseados na API real do Transferegov:
+  https://api.transferegov.gestao.gov.br/ted/
+  Tabelas: plano_acao, programa, termo_execucao, nota_credito,
+           programacao_financeira, plano_acao_meta, plano_acao_etapa
 """
-import json
 import sqlite3
 import logging
 from pathlib import Path
-from datetime import datetime, date
+from datetime import datetime
 from typing import List, Dict, Optional, Any
-from dataclasses import dataclass, asdict
 
 logger = logging.getLogger(__name__)
 
 
-@dataclass
-class TED:
-    """Modelo de dados TED."""
-    id: str
-    numero: str
-    data_emissao: Optional[str]
-    valor: Optional[float]
-    orgao_repassador: Optional[str]
-    codigo_orgao_repassador: Optional[str]
-    orgao_beneficiario: Optional[str]
-    codigo_orgao_beneficiario: Optional[str]
-    descricao: Optional[str]
-    modalidade: Optional[str]
-    situacao: Optional[str]
-    data_situacao: Optional[str] = None
-    historico: Optional[List[str]] = None
-    data_coleta: Optional[str] = None
-    
-    @classmethod
-    def from_dict(cls, data: Dict) -> 'TED':
-        """Cria instância TED a partir de dicionário da API."""
-        return cls(
-            id=str(data.get('id', data.get('numero', ''))),
-            numero=data.get('numero', ''),
-            data_emissao=data.get('dataEmissao', data.get('data')),
-            valor=float(data.get('valor', 0)) if data.get('valor') else None,
-            orgao_repassador=data.get('orgaoRepassador', data.get('nomeOrgaoRepassador')),
-            codigo_orgao_repassador=data.get('codigoOrgaoRepassador'),
-            orgao_beneficiario=data.get('orgaoBeneficiario', data.get('nomeOrgaoBeneficiario')),
-            codigo_orgao_beneficiario=data.get('codigoOrgaoBeneficiario'),
-            descricao=data.get('descricao', data.get('objeto', data.get('finalidade'))),
-            modalidade=data.get('modalidade', data.get('tipoTransferencia')),
-            situacao=data.get('situacao', data.get('status')),
-            data_situacao=data.get('dataSituacao', data.get('dataStatus')),
-            historico=data.get('historico', data.get('historicos', [])),
-            data_coleta=datetime.now().isoformat()
-        )
-    
-    def to_dict(self) -> Dict:
-        """Converte TED para dicionário."""
-        return asdict(self)
-
-
 class TEDStorage:
-    """Gerencia armazenamento de TEDs em JSON e SQLite."""
-    
+    """Persiste e consulta dados TED do IPEA em SQLite."""
+
     def __init__(self, data_dir: Path, db_path: Path):
         self.data_dir = Path(data_dir)
         self.db_path = Path(db_path)
-        self.raw_dir = self.data_dir / "raw"
-        self.exports_dir = self.data_dir / "exports"
-        
-        # Criar diretórios
-        self.raw_dir.mkdir(parents=True, exist_ok=True)
-        self.exports_dir.mkdir(parents=True, exist_ok=True)
-        
-        # Inicializar banco de dados
+        self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self._init_db()
-    
+
+    # ------------------------------------------------------------------
+    # Schema
+    # ------------------------------------------------------------------
+
     def _init_db(self):
-        """Inicializa o banco de dados SQLite com as tabelas necessárias."""
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
-        
-        # Tabela principal de TEDs
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS teds (
-                id TEXT PRIMARY KEY,
-                numero TEXT UNIQUE,
-                data_emissao TEXT,
-                valor REAL,
-                orgao_repassador TEXT,
-                codigo_orgao_repassador TEXT,
-                orgao_beneficiario TEXT,
-                codigo_orgao_beneficiario TEXT,
-                descricao TEXT,
-                modalidade TEXT,
-                situacao TEXT,
-                data_situacao TEXT,
-                data_coleta TEXT,
-                created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-                updated_at TEXT DEFAULT CURRENT_TIMESTAMP
-            )
-        ''')
-        
-        # Índice para buscas por órgão
-        cursor.execute('''
-            CREATE INDEX IF NOT EXISTS idx_orgao_repassador 
-            ON teds(codigo_orgao_repassador)
-        ''')
-        
-        cursor.execute('''
-            CREATE INDEX IF NOT EXISTS idx_orgao_beneficiario 
-            ON teds(codigo_orgao_beneficiario)
-        ''')
-        
-        # Índice para busca por situação
-        cursor.execute('''
-            CREATE INDEX IF NOT EXISTS idx_situacao 
-            ON teds(situacao)
-        ''')
-        
-        # Índice para busca por data
-        cursor.execute('''
-            CREATE INDEX IF NOT EXISTS idx_data_emissao 
-            ON teds(data_emissao)
-        ''')
-        
-        # Tabela de histórico
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS historico (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                ted_id TEXT,
-                descricao TEXT,
-                data_evento TEXT,
-                FOREIGN KEY (ted_id) REFERENCES teds(id)
-            )
-        ''')
-        
+        conn = self._conn()
+        c = conn.cursor()
+
+        c.executescript("""
+            CREATE TABLE IF NOT EXISTS programa (
+                id_programa             INTEGER PRIMARY KEY,
+                tx_codigo_programa      TEXT,
+                aa_ano_programa         INTEGER,
+                tx_situacao_programa    TEXT,
+                tx_nome_programa        TEXT,
+                sigla_unidade_descentralizadora   TEXT,
+                unidade_descentralizadora         TEXT,
+                tx_objetivo_programa    TEXT,
+                atualizado_em           TEXT
+            );
+
+            CREATE TABLE IF NOT EXISTS plano_acao (
+                id_plano_acao                   INTEGER PRIMARY KEY,
+                id_programa                     INTEGER,
+                sigla_unidade_descentralizada   TEXT,
+                unidade_descentralizada         TEXT,
+                sigla_unidade_responsavel_execucao TEXT,
+                unidade_responsavel_execucao    TEXT,
+                vl_total_plano_acao             REAL,
+                dt_inicio_vigencia              TEXT,
+                dt_fim_vigencia                 TEXT,
+                tx_objeto_plano_acao            TEXT,
+                tx_situacao_plano_acao          TEXT,
+                aa_ano_plano_acao               INTEGER,
+                sq_instrumento                  TEXT,
+                aa_instrumento                  INTEGER,
+                vl_beneficiario_especifico      REAL,
+                atualizado_em                   TEXT,
+                FOREIGN KEY (id_programa) REFERENCES programa(id_programa)
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_pa_programa    ON plano_acao(id_programa);
+            CREATE INDEX IF NOT EXISTS idx_pa_ano         ON plano_acao(aa_ano_plano_acao);
+            CREATE INDEX IF NOT EXISTS idx_pa_situacao    ON plano_acao(tx_situacao_plano_acao);
+            CREATE INDEX IF NOT EXISTS idx_pa_inicio      ON plano_acao(dt_inicio_vigencia);
+
+            CREATE TABLE IF NOT EXISTS termo_execucao (
+                id_termo                INTEGER PRIMARY KEY,
+                id_plano_acao           INTEGER,
+                tx_situacao_termo       TEXT,
+                tx_numero_ns_termo      TEXT,
+                dt_assinatura_termo     TEXT,
+                dt_divulgacao_termo     TEXT,
+                dt_efetivacao_termo     TEXT,
+                atualizado_em           TEXT,
+                FOREIGN KEY (id_plano_acao) REFERENCES plano_acao(id_plano_acao)
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_te_plano ON termo_execucao(id_plano_acao);
+
+            CREATE TABLE IF NOT EXISTS nota_credito (
+                id_nota                 INTEGER PRIMARY KEY,
+                id_plano_acao           INTEGER,
+                tx_numero_nota          TEXT,
+                tx_minuta_nota          TEXT,
+                dt_emissao_nota         TEXT,
+                tx_situacao_nota        TEXT,
+                cd_ug_emitente_nota     TEXT,
+                cd_ug_favorecida_nota   TEXT,
+                tx_observacao_nota      TEXT,
+                atualizado_em           TEXT,
+                FOREIGN KEY (id_plano_acao) REFERENCES plano_acao(id_plano_acao)
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_nc_plano ON nota_credito(id_plano_acao);
+
+            CREATE TABLE IF NOT EXISTS programacao_financeira (
+                id_programacao          INTEGER PRIMARY KEY,
+                id_plano_acao           INTEGER,
+                tp_tipo_programacao     TEXT,
+                tx_numero_programacao   TEXT,
+                tx_situacao_programacao TEXT,
+                dh_recebimento_programacao TEXT,
+                atualizado_em           TEXT,
+                FOREIGN KEY (id_plano_acao) REFERENCES plano_acao(id_plano_acao)
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_pf_plano ON programacao_financeira(id_plano_acao);
+
+            CREATE TABLE IF NOT EXISTS plano_acao_meta (
+                id_meta                 INTEGER PRIMARY KEY,
+                id_plano_acao           INTEGER,
+                nr_numero_meta          INTEGER,
+                tx_nome_meta            TEXT,
+                tx_descricao_meta       TEXT,
+                tp_unidade_meta         TEXT,
+                nr_quantidade_meta      REAL,
+                vl_valor_unitario_meta  REAL,
+                dt_inicio_vigencia_meta TEXT,
+                dt_fim_vigencia_meta    TEXT,
+                atualizado_em           TEXT,
+                FOREIGN KEY (id_plano_acao) REFERENCES plano_acao(id_plano_acao)
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_meta_plano ON plano_acao_meta(id_plano_acao);
+
+            CREATE TABLE IF NOT EXISTS sync_log (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                iniciado_em TEXT,
+                concluido_em TEXT,
+                status      TEXT,
+                total_planos INTEGER,
+                mensagem    TEXT
+            );
+        """)
+
         conn.commit()
         conn.close()
-        logger.info(f"Banco de dados inicializado: {self.db_path}")
-    
-    def save_raw(self, ted_data: Dict, timestamp: Optional[datetime] = None) -> Path:
-        """
-        Salva dados brutos do TED em JSON.
-        
-        Args:
-            ted_data: Dados brutos do TED
-            timestamp: Data/hora para nome do arquivo
-        
-        Returns:
-            Caminho do arquivo salvo
-        """
-        if timestamp is None:
-            timestamp = datetime.now()
-        
-        filename = f"{timestamp.strftime('%Y-%m-%d_%H-%M-%S')}_{ted_data.get('numero', 'unknown')}.json"
-        filepath = self.raw_dir / filename
-        
-        with open(filepath, 'w', encoding='utf-8') as f:
-            json.dump(ted_data, f, ensure_ascii=False, indent=2)
-        
-        logger.debug(f"Dados brutos salvos: {filepath}")
-        return filepath
-    
-    def save_processed(self, ted: TED) -> bool:
-        """
-        Salva TED processado no SQLite.
-        
-        Args:
-            ted: Objeto TED processado
-        
-        Returns:
-            True se salvo com sucesso
-        """
+        logger.info(f"Banco inicializado: {self.db_path}")
+
+    # ------------------------------------------------------------------
+    # Helpers
+    # ------------------------------------------------------------------
+
+    def _conn(self) -> sqlite3.Connection:
         conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
-        
+        conn.row_factory = sqlite3.Row
+        return conn
+
+    @staticmethod
+    def _now() -> str:
+        return datetime.now().isoformat()
+
+    # ------------------------------------------------------------------
+    # Upserts
+    # ------------------------------------------------------------------
+
+    def upsert_programa(self, p: Dict) -> bool:
+        conn = self._conn()
         try:
-            cursor.execute('''
-                INSERT OR REPLACE INTO teds 
-                (id, numero, data_emissao, valor, orgao_repassador, 
-                 codigo_orgao_repassador, orgao_beneficiario, codigo_orgao_beneficiario,
-                 descricao, modalidade, situacao, data_situacao, data_coleta, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-            ''', (
-                ted.id,
-                ted.numero,
-                ted.data_emissao,
-                ted.valor,
-                ted.orgao_repassador,
-                ted.codigo_orgao_repassador,
-                ted.orgao_beneficiario,
-                ted.codigo_orgao_beneficiario,
-                ted.descricao,
-                ted.modalidade,
-                ted.situacao,
-                ted.data_situacao,
-                ted.data_coleta
+            conn.execute("""
+                INSERT INTO programa
+                    (id_programa, tx_codigo_programa, aa_ano_programa,
+                     tx_situacao_programa, tx_nome_programa,
+                     sigla_unidade_descentralizadora, unidade_descentralizadora,
+                     tx_objetivo_programa, atualizado_em)
+                VALUES (?,?,?,?,?,?,?,?,?)
+                ON CONFLICT(id_programa) DO UPDATE SET
+                    tx_situacao_programa   = excluded.tx_situacao_programa,
+                    tx_nome_programa       = excluded.tx_nome_programa,
+                    tx_objetivo_programa   = excluded.tx_objetivo_programa,
+                    atualizado_em          = excluded.atualizado_em
+            """, (
+                p.get("id_programa"),
+                p.get("tx_codigo_programa"),
+                p.get("aa_ano_programa"),
+                p.get("tx_situacao_programa"),
+                p.get("tx_nome_programa"),
+                p.get("sigla_unidade_descentralizadora"),
+                p.get("unidade_descentralizadora"),
+                p.get("tx_objetivo_programa"),
+                self._now(),
             ))
-            
-            # Salvar histórico se existir
-            if ted.historico:
-                for evento in ted.historico:
-                    cursor.execute('''
-                        INSERT INTO historico (ted_id, descricao, data_evento)
-                        VALUES (?, ?, ?)
-                    ''', (ted.id, str(evento), datetime.now().isoformat()))
-            
             conn.commit()
-            logger.debug(f"TED {ted.numero} salvo no banco")
             return True
-            
         except sqlite3.Error as e:
-            logger.error(f"Erro ao salvar TED {ted.numero}: {e}")
-            conn.rollback()
+            logger.error(f"Erro upsert programa {p.get('id_programa')}: {e}")
             return False
         finally:
             conn.close()
-    
-    def save_batch(self, teds: List[TED]) -> int:
-        """
-        Salva múltiplos TEDs em lote.
-        
-        Args:
-            teds: Lista de objetos TED
-        
-        Returns:
-            Número de TEDs salvos com sucesso
-        """
-        count = 0
-        for ted in teds:
-            if self.save_processed(ted):
-                count += 1
-        
-        logger.info(f"Lote salvo: {count}/{len(teds)} TEDs")
-        return count
-    
-    def load_all_ipea(self, orgao_code: str = "IPEA") -> List[TED]:
-        """
-        Carrega todos os TEDs do IPEA do banco.
-        
-        Args:
-            orgao_code: Código do órgão para filtrar
-        
-        Returns:
-            Lista de objetos TED
-        """
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
-        
-        cursor.execute('''
-            SELECT * FROM teds 
-            WHERE codigo_orgao_repassador = ? OR codigo_orgao_beneficiario = ?
-            ORDER BY data_emissao DESC
-        ''', (orgao_code, orgao_code))
-        
-        rows = cursor.fetchall()
+
+    def upsert_plano_acao(self, p: Dict) -> bool:
+        conn = self._conn()
+        try:
+            conn.execute("""
+                INSERT INTO plano_acao
+                    (id_plano_acao, id_programa, sigla_unidade_descentralizada,
+                     unidade_descentralizada, sigla_unidade_responsavel_execucao,
+                     unidade_responsavel_execucao, vl_total_plano_acao,
+                     dt_inicio_vigencia, dt_fim_vigencia, tx_objeto_plano_acao,
+                     tx_situacao_plano_acao, aa_ano_plano_acao,
+                     sq_instrumento, aa_instrumento, vl_beneficiario_especifico,
+                     atualizado_em)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                ON CONFLICT(id_plano_acao) DO UPDATE SET
+                    tx_situacao_plano_acao          = excluded.tx_situacao_plano_acao,
+                    vl_total_plano_acao             = excluded.vl_total_plano_acao,
+                    dt_fim_vigencia                 = excluded.dt_fim_vigencia,
+                    atualizado_em                   = excluded.atualizado_em
+            """, (
+                p.get("id_plano_acao"),
+                p.get("id_programa"),
+                p.get("sigla_unidade_descentralizada"),
+                p.get("unidade_descentralizada"),
+                p.get("sigla_unidade_responsavel_execucao"),
+                p.get("unidade_responsavel_execucao"),
+                p.get("vl_total_plano_acao"),
+                p.get("dt_inicio_vigencia"),
+                p.get("dt_fim_vigencia"),
+                p.get("tx_objeto_plano_acao"),
+                p.get("tx_situacao_plano_acao"),
+                p.get("aa_ano_plano_acao"),
+                p.get("sq_instrumento"),
+                p.get("aa_instrumento"),
+                p.get("vl_beneficiario_especifico"),
+                self._now(),
+            ))
+            conn.commit()
+            return True
+        except sqlite3.Error as e:
+            logger.error(f"Erro upsert plano_acao {p.get('id_plano_acao')}: {e}")
+            return False
+        finally:
+            conn.close()
+
+    def upsert_termo_execucao(self, t: Dict) -> bool:
+        conn = self._conn()
+        try:
+            conn.execute("""
+                INSERT INTO termo_execucao
+                    (id_termo, id_plano_acao, tx_situacao_termo,
+                     tx_numero_ns_termo, dt_assinatura_termo,
+                     dt_divulgacao_termo, dt_efetivacao_termo, atualizado_em)
+                VALUES (?,?,?,?,?,?,?,?)
+                ON CONFLICT(id_termo) DO UPDATE SET
+                    tx_situacao_termo   = excluded.tx_situacao_termo,
+                    dt_efetivacao_termo = excluded.dt_efetivacao_termo,
+                    atualizado_em       = excluded.atualizado_em
+            """, (
+                t.get("id_termo"),
+                t.get("id_plano_acao"),
+                t.get("tx_situacao_termo"),
+                t.get("tx_numero_ns_termo"),
+                t.get("dt_assinatura_termo"),
+                t.get("dt_divulgacao_termo"),
+                t.get("dt_efetivacao_termo"),
+                self._now(),
+            ))
+            conn.commit()
+            return True
+        except sqlite3.Error as e:
+            logger.error(f"Erro upsert termo {t.get('id_termo')}: {e}")
+            return False
+        finally:
+            conn.close()
+
+    def upsert_nota_credito(self, n: Dict) -> bool:
+        conn = self._conn()
+        try:
+            conn.execute("""
+                INSERT INTO nota_credito
+                    (id_nota, id_plano_acao, tx_numero_nota, tx_minuta_nota,
+                     dt_emissao_nota, tx_situacao_nota,
+                     cd_ug_emitente_nota, cd_ug_favorecida_nota,
+                     tx_observacao_nota, atualizado_em)
+                VALUES (?,?,?,?,?,?,?,?,?,?)
+                ON CONFLICT(id_nota) DO UPDATE SET
+                    tx_situacao_nota = excluded.tx_situacao_nota,
+                    atualizado_em    = excluded.atualizado_em
+            """, (
+                n.get("id_nota"),
+                n.get("id_plano_acao"),
+                n.get("tx_numero_nota"),
+                n.get("tx_minuta_nota"),
+                n.get("dt_emissao_nota"),
+                n.get("tx_situacao_nota"),
+                n.get("cd_ug_emitente_nota"),
+                n.get("cd_ug_favorecida_nota"),
+                n.get("tx_observacao_nota"),
+                self._now(),
+            ))
+            conn.commit()
+            return True
+        except sqlite3.Error as e:
+            logger.error(f"Erro upsert nota {n.get('id_nota')}: {e}")
+            return False
+        finally:
+            conn.close()
+
+    def upsert_programacao_financeira(self, pf: Dict) -> bool:
+        conn = self._conn()
+        try:
+            conn.execute("""
+                INSERT INTO programacao_financeira
+                    (id_programacao, id_plano_acao, tp_tipo_programacao,
+                     tx_numero_programacao, tx_situacao_programacao,
+                     dh_recebimento_programacao, atualizado_em)
+                VALUES (?,?,?,?,?,?,?)
+                ON CONFLICT(id_programacao) DO UPDATE SET
+                    tx_situacao_programacao = excluded.tx_situacao_programacao,
+                    atualizado_em           = excluded.atualizado_em
+            """, (
+                pf.get("id_programacao"),
+                pf.get("id_plano_acao"),
+                pf.get("tp_pf_tipo_programacao", pf.get("tp_tipo_programacao")),
+                pf.get("tx_numero_programacao"),
+                pf.get("tx_situacao_programacao"),
+                pf.get("dh_recebimento_programacao"),
+                self._now(),
+            ))
+            conn.commit()
+            return True
+        except sqlite3.Error as e:
+            logger.error(f"Erro upsert programacao {pf.get('id_programacao')}: {e}")
+            return False
+        finally:
+            conn.close()
+
+    def upsert_meta(self, m: Dict) -> bool:
+        conn = self._conn()
+        try:
+            conn.execute("""
+                INSERT INTO plano_acao_meta
+                    (id_meta, id_plano_acao, nr_numero_meta, tx_nome_meta,
+                     tx_descricao_meta, tp_unidade_meta, nr_quantidade_meta,
+                     vl_valor_unitario_meta, dt_inicio_vigencia_meta,
+                     dt_fim_vigencia_meta, atualizado_em)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?)
+                ON CONFLICT(id_meta) DO UPDATE SET
+                    tx_nome_meta        = excluded.tx_nome_meta,
+                    tx_descricao_meta   = excluded.tx_descricao_meta,
+                    atualizado_em       = excluded.atualizado_em
+            """, (
+                m.get("id_meta"),
+                m.get("id_plano_acao"),
+                m.get("nr_numero_meta"),
+                m.get("tx_nome_meta"),
+                m.get("tx_descricao_meta"),
+                m.get("tp_unidade_meta"),
+                m.get("nr_quantidade_meta"),
+                m.get("vl_valor_unitario_meta"),
+                m.get("dt_inicio_vigencia_meta"),
+                m.get("dt_fim_vigencia_meta"),
+                self._now(),
+            ))
+            conn.commit()
+            return True
+        except sqlite3.Error as e:
+            logger.error(f"Erro upsert meta {m.get('id_meta')}: {e}")
+            return False
+        finally:
+            conn.close()
+
+    def log_sync(self, iniciado_em: str, status: str,
+                 total_planos: int = 0, mensagem: str = "") -> None:
+        conn = self._conn()
+        conn.execute("""
+            INSERT INTO sync_log (iniciado_em, concluido_em, status, total_planos, mensagem)
+            VALUES (?,?,?,?,?)
+        """, (iniciado_em, self._now(), status, total_planos, mensagem))
+        conn.commit()
         conn.close()
-        
-        teds = []
-        for row in rows:
-            ted = TED(
-                id=row[0],
-                numero=row[1],
-                data_emissao=row[2],
-                valor=row[3],
-                orgao_repassador=row[4],
-                codigo_orgao_repassador=row[5],
-                orgao_beneficiario=row[6],
-                codigo_orgao_beneficiario=row[7],
-                descricao=row[8],
-                modalidade=row[9],
-                situacao=row[10],
-                data_situacao=row[11],
-                data_coleta=row[12]
-            )
-            teds.append(ted)
-        
-        logger.info(f"Carregados {len(teds)} TEDs do IPEA")
-        return teds
-    
-    def get_teds(
-        self,
-        limit: int = 100,
-        offset: int = 0,
-        ano: Optional[int] = None,
-        mes: Optional[int] = None,
-        uf: Optional[str] = None,
-        municipio: Optional[str] = None,
-        ordenar_por: str = "data_emissao"
-    ) -> List[TED]:
-        """
-        Obtém TEDs com filtros e paginação.
-        
-        Args:
-            limit: Quantidade máxima de registros
-            offset: Deslocamento para paginação
-            ano: Filtrar por ano
-            mes: Filtrar por mês
-            uf: Filtrar por UF
-            municipio: Filtrar por município
-            ordenar_por: Campo para ordenação
-        
-        Returns:
-            Lista de objetos TED
-        """
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
-        
-        # Construir query com filtros
-        query = "SELECT * FROM teds WHERE 1=1"
-        params = []
-        
-        if ano is not None:
-            query += " AND strftime('%Y', data_emissao) = ?"
-            params.append(str(ano))
-        
-        if mes is not None:
-            query += " AND strftime('%m', data_emissao) = ?"
-            params.append(f"{mes:02d}")
-        
-        if uf is not None:
-            query += " AND (orgao_beneficiario LIKE ? OR orgao_repassador LIKE ?)"
-            params.extend([f"%{uf}%", f"%{uf}%"])
-        
-        if municipio is not None:
-            query += " AND (orgao_beneficiario LIKE ? OR orgao_repassador LIKE ?)"
-            params.extend([f"%{municipio}%", f"%{municipio}%"])
-        
-        # Ordenação
-        order_map = {
-            "data_emissao": "data_emissao",
-            "valor": "valor",
-            "ano": "strftime('%Y', data_emissao)",
-            "mes": "strftime('%m', data_emissao)"
-        }
-        order_field = order_map.get(ordenar_por, "data_emissao")
-        query += f" ORDER BY {order_field} DESC"
-        
-        # Paginação
-        query += " LIMIT ? OFFSET ?"
-        params.extend([limit, offset])
-        
-        cursor.execute(query, params)
-        rows = cursor.fetchall()
-        conn.close()
-        
-        teds = []
-        for row in rows:
-            ted = TED(
-                id=row[0],
-                numero=row[1],
-                data_emissao=row[2],
-                valor=row[3],
-                orgao_repassador=row[4],
-                codigo_orgao_repassador=row[5],
-                orgao_beneficiario=row[6],
-                codigo_orgao_beneficiario=row[7],
-                descricao=row[8],
-                modalidade=row[9],
-                situacao=row[10],
-                data_situacao=row[11],
-                data_coleta=row[12]
-            )
-            teds.append(ted)
-        
-        return teds
-    
-    def get_count(
-        self,
-        ano: Optional[int] = None,
-        mes: Optional[int] = None,
-        uf: Optional[str] = None,
-        municipio: Optional[str] = None
-    ) -> int:
-        """
-        Obtém contagem de TEDs com filtros.
-        
-        Args:
-            ano: Filtrar por ano
-            mes: Filtrar por mês
-            uf: Filtrar por UF
-            municipio: Filtrar por município
-        
-        Returns:
-            Contagem de registros
-        """
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
-        
-        query = "SELECT COUNT(*) FROM teds WHERE 1=1"
-        params = []
-        
-        if ano is not None:
-            query += " AND strftime('%Y', data_emissao) = ?"
-            params.append(str(ano))
-        
-        if mes is not None:
-            query += " AND strftime('%m', data_emissao) = ?"
-            params.append(f"{mes:02d}")
-        
-        if uf is not None:
-            query += " AND (orgao_beneficiario LIKE ? OR orgao_repassador LIKE ?)"
-            params.extend([f"%{uf}%", f"%{uf}%"])
-        
-        if municipio is not None:
-            query += " AND (orgao_beneficiario LIKE ? OR orgao_repassador LIKE ?)"
-            params.extend([f"%{municipio}%", f"%{municipio}%"])
-        
-        cursor.execute(query, params)
-        count = cursor.fetchone()[0]
-        conn.close()
-        
-        return count
-    
-    def get_total_value(self) -> float:
-        """
-        Obtém o valor total de todos os TEDs armazenados.
-        
-        Returns:
-            Valor total somado
-        """
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
-        
-        cursor.execute('SELECT COALESCE(SUM(valor), 0) FROM teds')
-        total = cursor.fetchone()[0]
-        conn.close()
-        
-        return total or 0.0
-    
-    def get_all_teds(
-        self,
-        limit: int = 100,
-        offset: int = 0,
-        beneficiary_filter: Optional[str] = None
-    ) -> List[TED]:
-        """
-        Obtém todos os TEDs (ou com filtro por beneficiário).
-        Método compatível com a API do server.py
-        
-        Args:
-            limit: Quantidade máxima de registros
-            offset: Deslocamento para paginação
-            beneficiary_filter: Filtro por nome do beneficiário
-        
-        Returns:
-            Lista de objetos TED
-        """
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
-        
-        query = "SELECT * FROM teds WHERE 1=1"
-        params = []
-        
-        if beneficiary_filter:
-            query += " AND (orgao_beneficiario LIKE ? OR descricao LIKE ?)"
-            params.extend([f"%{beneficiary_filter}%", f"%{beneficiary_filter}%"])
-        
-        query += " ORDER BY data_emissao DESC LIMIT ? OFFSET ?"
-        params.extend([limit, offset])
-        
-        cursor.execute(query, params)
-        rows = cursor.fetchall()
-        conn.close()
-        
-        teds = []
-        for row in rows:
-            ted = TED(
-                id=row[0],
-                numero=row[1],
-                data_emissao=row[2],
-                valor=row[3],
-                orgao_repassador=row[4],
-                codigo_orgao_repassador=row[5],
-                orgao_beneficiario=row[6],
-                codigo_orgao_beneficiario=row[7],
-                descricao=row[8],
-                modalidade=row[9],
-                situacao=row[10],
-                data_situacao=row[11],
-                data_coleta=row[12]
-            )
-            teds.append(ted)
-        
-        return teds
-    
-    def get_ted_by_id(self, id_ted: int) -> Optional[TED]:
-        """
-        Obtém um TED pelo ID.
-        
-        Args:
-            id_ted: ID do TED
-        
-        Returns:
-            Objeto TED ou None
-        """
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
-        
-        cursor.execute('SELECT * FROM teds WHERE id = ?', (str(id_ted),))
-        row = cursor.fetchone()
-        conn.close()
-        
-        if row:
-            return TED(
-                id=row[0],
-                numero=row[1],
-                data_emissao=row[2],
-                valor=row[3],
-                orgao_repassador=row[4],
-                codigo_orgao_repassador=row[5],
-                orgao_beneficiario=row[6],
-                codigo_orgao_beneficiario=row[7],
-                descricao=row[8],
-                modalidade=row[9],
-                situacao=row[10],
-                data_situacao=row[11],
-                data_coleta=row[12]
-            )
-        return None
-    
-    def load_by_period(self, start_date: date, end_date: date) -> List[TED]:
-        """
-        Carrega TEDs por período.
-        
-        Args:
-            start_date: Data inicial
-            end_date: Data final
-        
-        Returns:
-            Lista de objetos TED
-        """
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
-        
-        cursor.execute('''
-            SELECT * FROM teds 
-            WHERE data_emissao BETWEEN ? AND ?
-            ORDER BY data_emissao DESC
-        ''', (start_date.isoformat(), end_date.isoformat()))
-        
-        rows = cursor.fetchall()
-        conn.close()
-        
-        teds = []
-        for row in rows:
-            ted = TED(
-                id=row[0],
-                numero=row[1],
-                data_emissao=row[2],
-                valor=row[3],
-                orgao_repassador=row[4],
-                codigo_orgao_repassador=row[5],
-                orgao_beneficiario=row[6],
-                codigo_orgao_beneficiario=row[7],
-                descricao=row[8],
-                modalidade=row[9],
-                situacao=row[10],
-                data_situacao=row[11],
-                data_coleta=row[12]
-            )
-            teds.append(ted)
-        
-        logger.info(f"Carregados {len(teds)} TEDs no período {start_date} a {end_date}")
-        return teds
-    
-    def export_csv(self, filepath: Path, teds: Optional[List[TED]] = None) -> Path:
-        """
-        Exporta TEDs para CSV.
-        
-        Args:
-            filepath: Caminho do arquivo CSV
-            teds: Lista de TEDs para exportar (ou None para todos)
-        
-        Returns:
-            Caminho do arquivo exportado
-        """
-        import csv
-        
-        if teds is None:
-            teds = self.load_all_ipea()
-        
-        filepath = Path(filepath)
-        
-        if not teds:
-            logger.warning("Nenhum TED para exportar")
-            return filepath
-        
-        with open(filepath, 'w', newline='', encoding='utf-8') as f:
-            writer = csv.DictWriter(f, fieldnames=TED.__dataclass_fields__.keys())
-            writer.writeheader()
-            
-            for ted in teds:
-                writer.writerow(ted.to_dict())
-        
-        logger.info(f"Exportados {len(teds)} TEDs para {filepath}")
-        return filepath
-    
+
+    # ------------------------------------------------------------------
+    # Consultas
+    # ------------------------------------------------------------------
+
     def get_summary(self) -> Dict[str, Any]:
-        """
-        Obtém resumo estatístico dos TEDs armazenados.
-        
-        Returns:
-            Dicionário com estatísticas
-        """
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
-        
-        # Total de TEDs
-        cursor.execute('SELECT COUNT(*) FROM teds')
-        total = cursor.fetchone()[0]
-        
-        # Valor total
-        cursor.execute('SELECT SUM(valor) FROM teds')
-        valor_total = cursor.fetchone()[0] or 0
-        
-        # Por situação
-        cursor.execute('''
-            SELECT situacao, COUNT(*), SUM(valor) 
-            FROM teds 
-            GROUP BY situacao
-        ''')
-        por_situacao = {row[0]: {'quantidade': row[1], 'valor': row[2]} for row in cursor.fetchall()}
-        
-        # Por modalidade
-        cursor.execute('''
-            SELECT modalidade, COUNT(*) 
-            FROM teds 
-            GROUP BY modalidade
-        ''')
-        por_modalidade = {row[0]: row[1] for row in cursor.fetchall()}
-        
+        """Estatísticas gerais para o dashboard."""
+        conn = self._conn()
+        c = conn.cursor()
+
+        c.execute("SELECT COUNT(*), COALESCE(SUM(vl_total_plano_acao),0) FROM plano_acao")
+        total, valor_total = c.fetchone()
+
+        c.execute("""
+            SELECT tx_situacao_plano_acao, COUNT(*), COALESCE(SUM(vl_total_plano_acao),0)
+            FROM plano_acao GROUP BY tx_situacao_plano_acao
+        """)
+        por_situacao = {r[0]: {"quantidade": r[1], "valor": r[2]} for r in c.fetchall()}
+
+        c.execute("""
+            SELECT aa_ano_plano_acao, COUNT(*), COALESCE(SUM(vl_total_plano_acao),0)
+            FROM plano_acao
+            WHERE aa_ano_plano_acao IS NOT NULL
+            GROUP BY aa_ano_plano_acao ORDER BY aa_ano_plano_acao
+        """)
+        por_ano = {str(r[0]): {"quantidade": r[1], "valor": r[2]} for r in c.fetchall()}
+
+        c.execute("SELECT MAX(atualizado_em) FROM plano_acao")
+        ultima_atualizacao = c.fetchone()[0]
+
         conn.close()
-        
         return {
-            'total_teds': total,
-            'valor_total': valor_total,
-            'por_situacao': por_situacao,
-            'por_modalidade': por_modalidade,
-            'data_geracao': datetime.now().isoformat()
+            "total_planos": total,
+            "valor_total": valor_total,
+            "por_situacao": por_situacao,
+            "por_ano": por_ano,
+            "ultima_atualizacao": ultima_atualizacao,
+            "gerado_em": self._now(),
         }
 
-# Arquivo atualizado para deploy no GitHub
+    def get_planos(
+        self,
+        limit: int = 100,
+        offset: int = 0,
+        ano: Optional[int] = None,
+        situacao: Optional[str] = None,
+        busca: Optional[str] = None,
+    ) -> List[Dict]:
+        """Lista planos com joins de termo e nota."""
+        conn = self._conn()
+        c = conn.cursor()
+
+        where = ["1=1"]
+        params: list = []
+
+        if ano:
+            where.append("pa.aa_ano_plano_acao = ?")
+            params.append(ano)
+        if situacao:
+            where.append("pa.tx_situacao_plano_acao = ?")
+            params.append(situacao)
+        if busca:
+            where.append("(pa.tx_objeto_plano_acao LIKE ? OR pa.sq_instrumento LIKE ?)")
+            params.extend([f"%{busca}%", f"%{busca}%"])
+
+        query = f"""
+            SELECT
+                pa.id_plano_acao,
+                pa.id_programa,
+                pa.sigla_unidade_descentralizada,
+                pa.unidade_descentralizada,
+                pa.sigla_unidade_responsavel_execucao,
+                pa.unidade_responsavel_execucao,
+                pa.vl_total_plano_acao,
+                pa.dt_inicio_vigencia,
+                pa.dt_fim_vigencia,
+                pa.tx_objeto_plano_acao,
+                pa.tx_situacao_plano_acao,
+                pa.aa_ano_plano_acao,
+                pa.sq_instrumento,
+                pa.aa_instrumento,
+                pr.tx_nome_programa,
+                pr.sigla_unidade_descentralizadora,
+                te.tx_situacao_termo,
+                te.tx_numero_ns_termo,
+                nc.tx_numero_nota,
+                nc.tx_situacao_nota,
+                nc.dt_emissao_nota
+            FROM plano_acao pa
+            LEFT JOIN programa pr ON pr.id_programa = pa.id_programa
+            LEFT JOIN termo_execucao te ON te.id_plano_acao = pa.id_plano_acao
+            LEFT JOIN nota_credito nc ON nc.id_plano_acao = pa.id_plano_acao
+            WHERE {' AND '.join(where)}
+            ORDER BY pa.dt_inicio_vigencia DESC
+            LIMIT ? OFFSET ?
+        """
+        params.extend([limit, offset])
+        c.execute(query, params)
+        rows = c.fetchall()
+        conn.close()
+
+        return [dict(r) for r in rows]
+
+    def get_plano_detail(self, id_plano_acao: int) -> Optional[Dict]:
+        """Detalhe completo de um plano: metas, notas, termo, programação."""
+        conn = self._conn()
+        c = conn.cursor()
+
+        c.execute("""
+            SELECT pa.*, pr.tx_nome_programa, pr.tx_objetivo_programa,
+                   pr.sigla_unidade_descentralizadora
+            FROM plano_acao pa
+            LEFT JOIN programa pr ON pr.id_programa = pa.id_programa
+            WHERE pa.id_plano_acao = ?
+        """, (id_plano_acao,))
+        row = c.fetchone()
+        if not row:
+            conn.close()
+            return None
+
+        result = dict(row)
+
+        c.execute("SELECT * FROM termo_execucao WHERE id_plano_acao = ?", (id_plano_acao,))
+        result["termos"] = [dict(r) for r in c.fetchall()]
+
+        c.execute("SELECT * FROM nota_credito WHERE id_plano_acao = ? ORDER BY dt_emissao_nota", (id_plano_acao,))
+        result["notas_credito"] = [dict(r) for r in c.fetchall()]
+
+        c.execute("SELECT * FROM programacao_financeira WHERE id_plano_acao = ? ORDER BY dh_recebimento_programacao", (id_plano_acao,))
+        result["programacoes_financeiras"] = [dict(r) for r in c.fetchall()]
+
+        c.execute("SELECT * FROM plano_acao_meta WHERE id_plano_acao = ? ORDER BY nr_numero_meta", (id_plano_acao,))
+        result["metas"] = [dict(r) for r in c.fetchall()]
+
+        conn.close()
+        return result
+
+    def get_count(self) -> int:
+        conn = self._conn()
+        count = conn.execute("SELECT COUNT(*) FROM plano_acao").fetchone()[0]
+        conn.close()
+        return count
+
+    def get_last_sync(self) -> Optional[Dict]:
+        conn = self._conn()
+        c = conn.cursor()
+        c.execute("SELECT * FROM sync_log ORDER BY id DESC LIMIT 1")
+        row = c.fetchone()
+        conn.close()
+        return dict(row) if row else None
+
+    def get_timeline(self) -> List[Dict]:
+        """Evolução mensal do valor total dos planos iniciados."""
+        conn = self._conn()
+        c = conn.cursor()
+        c.execute("""
+            SELECT
+                strftime('%Y-%m', dt_inicio_vigencia) AS mes,
+                COUNT(*) AS quantidade,
+                COALESCE(SUM(vl_total_plano_acao), 0) AS valor
+            FROM plano_acao
+            WHERE dt_inicio_vigencia IS NOT NULL
+            GROUP BY mes
+            ORDER BY mes
+        """)
+        rows = c.fetchall()
+        conn.close()
+        return [dict(r) for r in rows]
