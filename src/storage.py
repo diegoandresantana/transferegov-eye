@@ -275,6 +275,175 @@ class TEDStorage:
         logger.info(f"Carregados {len(teds)} TEDs do IPEA")
         return teds
     
+    def get_teds(
+        self,
+        limit: int = 100,
+        offset: int = 0,
+        ano: Optional[int] = None,
+        mes: Optional[int] = None,
+        uf: Optional[str] = None,
+        municipio: Optional[str] = None,
+        ordenar_por: str = "data_emissao"
+    ) -> List[TED]:
+        """
+        Obtém TEDs com filtros e paginação.
+        
+        Args:
+            limit: Quantidade máxima de registros
+            offset: Deslocamento para paginação
+            ano: Filtrar por ano
+            mes: Filtrar por mês
+            uf: Filtrar por UF
+            municipio: Filtrar por município
+            ordenar_por: Campo para ordenação
+        
+        Returns:
+            Lista de objetos TED
+        """
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        
+        # Construir query com filtros
+        query = "SELECT * FROM teds WHERE 1=1"
+        params = []
+        
+        if ano is not None:
+            query += " AND strftime('%Y', data_emissao) = ?"
+            params.append(str(ano))
+        
+        if mes is not None:
+            query += " AND strftime('%m', data_emissao) = ?"
+            params.append(f"{mes:02d}")
+        
+        if uf is not None:
+            query += " AND (orgao_beneficiario LIKE ? OR orgao_repassador LIKE ?)"
+            params.extend([f"%{uf}%", f"%{uf}%"])
+        
+        if municipio is not None:
+            query += " AND (orgao_beneficiario LIKE ? OR orgao_repassador LIKE ?)"
+            params.extend([f"%{municipio}%", f"%{municipio}%"])
+        
+        # Ordenação
+        order_map = {
+            "data_emissao": "data_emissao",
+            "valor": "valor",
+            "ano": "strftime('%Y', data_emissao)",
+            "mes": "strftime('%m', data_emissao)"
+        }
+        order_field = order_map.get(ordenar_por, "data_emissao")
+        query += f" ORDER BY {order_field} DESC"
+        
+        # Paginação
+        query += " LIMIT ? OFFSET ?"
+        params.extend([limit, offset])
+        
+        cursor.execute(query, params)
+        rows = cursor.fetchall()
+        conn.close()
+        
+        teds = []
+        for row in rows:
+            ted = TED(
+                id=row[0],
+                numero=row[1],
+                data_emissao=row[2],
+                valor=row[3],
+                orgao_repassador=row[4],
+                codigo_orgao_repassador=row[5],
+                orgao_beneficiario=row[6],
+                codigo_orgao_beneficiario=row[7],
+                descricao=row[8],
+                modalidade=row[9],
+                situacao=row[10],
+                data_situacao=row[11],
+                data_coleta=row[12]
+            )
+            teds.append(ted)
+        
+        return teds
+    
+    def get_count(
+        self,
+        ano: Optional[int] = None,
+        mes: Optional[int] = None,
+        uf: Optional[str] = None,
+        municipio: Optional[str] = None
+    ) -> int:
+        """
+        Obtém contagem de TEDs com filtros.
+        
+        Args:
+            ano: Filtrar por ano
+            mes: Filtrar por mês
+            uf: Filtrar por UF
+            municipio: Filtrar por município
+        
+        Returns:
+            Contagem de registros
+        """
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        
+        query = "SELECT COUNT(*) FROM teds WHERE 1=1"
+        params = []
+        
+        if ano is not None:
+            query += " AND strftime('%Y', data_emissao) = ?"
+            params.append(str(ano))
+        
+        if mes is not None:
+            query += " AND strftime('%m', data_emissao) = ?"
+            params.append(f"{mes:02d}")
+        
+        if uf is not None:
+            query += " AND (orgao_beneficiario LIKE ? OR orgao_repassador LIKE ?)"
+            params.extend([f"%{uf}%", f"%{uf}%"])
+        
+        if municipio is not None:
+            query += " AND (orgao_beneficiario LIKE ? OR orgao_repassador LIKE ?)"
+            params.extend([f"%{municipio}%", f"%{municipio}%"])
+        
+        cursor.execute(query, params)
+        count = cursor.fetchone()[0]
+        conn.close()
+        
+        return count
+    
+    def get_ted_by_id(self, id_ted: int) -> Optional[TED]:
+        """
+        Obtém um TED pelo ID.
+        
+        Args:
+            id_ted: ID do TED
+        
+        Returns:
+            Objeto TED ou None
+        """
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        
+        cursor.execute('SELECT * FROM teds WHERE id = ?', (str(id_ted),))
+        row = cursor.fetchone()
+        conn.close()
+        
+        if row:
+            return TED(
+                id=row[0],
+                numero=row[1],
+                data_emissao=row[2],
+                valor=row[3],
+                orgao_repassador=row[4],
+                codigo_orgao_repassador=row[5],
+                orgao_beneficiario=row[6],
+                codigo_orgao_beneficiario=row[7],
+                descricao=row[8],
+                modalidade=row[9],
+                situacao=row[10],
+                data_situacao=row[11],
+                data_coleta=row[12]
+            )
+        return None
+    
     def load_by_period(self, start_date: date, end_date: date) -> List[TED]:
         """
         Carrega TEDs por período.
