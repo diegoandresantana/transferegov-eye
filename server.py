@@ -44,13 +44,16 @@ class SyncStatus(BaseModel):
 
 # Modelo de resposta para lista de TEDs
 class TEDResponse(BaseModel):
-    id_ted: int
-    nm_beneficiario: str
-    nr_repassador: str
-    vl_repasse: float
-    ds_objeto: str
-    dt_repasse: str
-    
+    id: str
+    numero: str
+    orgao_beneficiario: Optional[str]
+    orgao_repassador: Optional[str]
+    valor: Optional[float]
+    descricao: Optional[str]
+    data_emissao: Optional[str]
+    situacao: Optional[str]
+    modalidade: Optional[str]
+
     class Config:
         from_attributes = True
 
@@ -91,8 +94,8 @@ async def trigger_sync(background_tasks: BackgroundTasks, days: int = 30):
     def run_sync():
         try:
             print(f"Iniciando sincronização dos últimos {days} dias...")
-            stats = monitor.synchronize(days=days)
-            print(f"Sincronização concluída. Encontrados: {stats['found']}, Salvos: {stats['saved']}")
+            stats = monitor.run_incremental_sync(days_back=days)
+            print(f"Sincronização concluída. Processados: {stats['total_processed']}, IPEA: {stats['total_ipea']}")
         except Exception as e:
             print(f"Erro na sincronização: {e}")
 
@@ -117,7 +120,7 @@ def list_teds(
     Lista TEDs armazenados no banco de dados.
     """
     try:
-        teds = storage.get_all_teds(limit=limit, offset=offset, beneficiary_filter=beneficiario)
+        teds = storage.get_teds(limit=limit, offset=offset)
         return teds
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -132,11 +135,12 @@ def get_stats():
     - Últimos TEDs cadastrados
     """
     try:
-        count = storage.get_count()
-        total_value = storage.get_total_value()
+        summary = storage.get_summary()
+        count = summary['total_teds']
+        total_value = summary['valor_total']
         
         # Busca últimos TEDs para tabela
-        recent_teds = storage.get_all_teds(limit=20, offset=0)
+        recent_teds = storage.get_teds(limit=20, offset=0)
         
         # Prepara dados para gráfico de evolução mensal
         # Nota: Em produção, isso viria de uma query SQL otimizada
@@ -156,16 +160,16 @@ def get_stats():
             for ted in recent_teds:
                 # Extrai mês da data
                 try:
-                    if hasattr(ted, 'dt_repasse') and ted.dt_repasse:
-                        data = datetime.strptime(ted.dt_repasse[:10], '%Y-%m-%d')
+                    if hasattr(ted, 'data_emissao') and ted.data_emissao:
+                        data = datetime.strptime(ted.data_emissao[:10], '%Y-%m-%d')
                         mes_ano = data.strftime('%b/%Y')
-                        meses_dict[mes_ano] = meses_dict.get(mes_ano, 0) + ted.vl_repasse
+                        meses_dict[mes_ano] = meses_dict.get(mes_ano, 0) + (ted.valor or 0)
                 except:
                     pass
                 
                 # Conta beneficiários
-                if hasattr(ted, 'nm_beneficiario') and ted.nm_beneficiario:
-                    beneficiarios_dict[ted.nm_beneficiario] = beneficiarios_dict.get(ted.nm_beneficiario, 0) + ted.vl_repasse
+                if hasattr(ted, 'orgao_beneficiario') and ted.orgao_beneficiario:
+                    beneficiarios_dict[ted.orgao_beneficiario] = beneficiarios_dict.get(ted.orgao_beneficiario, 0) + (ted.valor or 0)
             
             # Ordena e pega top 5
             sorted_ben = sorted(beneficiarios_dict.items(), key=lambda x: x[1], reverse=True)[:5]
@@ -181,11 +185,11 @@ def get_stats():
         recent_formatted = []
         for ted in recent_teds:
             recent_formatted.append({
-                "data_transacao": ted.dt_repasse if hasattr(ted, 'dt_repasse') else None,
-                "nome_beneficiario": ted.nm_beneficiario if hasattr(ted, 'nm_beneficiario') else "Não informado",
-                "valor_repasse": ted.vl_repasse if hasattr(ted, 'vl_repasse') else 0,
-                "descricao": ted.ds_objeto if hasattr(ted, 'ds_objeto') else "-",
-                "status": "Concluído"
+                "data_transacao": ted.data_emissao if hasattr(ted, 'data_emissao') else None,
+                "nome_beneficiario": ted.orgao_beneficiario if hasattr(ted, 'orgao_beneficiario') else "Não informado",
+                "valor_repasse": ted.valor if hasattr(ted, 'valor') else 0,
+                "descricao": ted.descricao if hasattr(ted, 'descricao') else "-",
+                "status": ted.situacao if hasattr(ted, 'situacao') else "Não informado"
             })
         
         return {
