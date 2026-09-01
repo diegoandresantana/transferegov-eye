@@ -1,0 +1,3 @@
+id,numero,data_emissao,valor,orgao_repassador,codigo_orgao_repassador,orgao_beneficiario,codigo_orgao_beneficiario,descricao,modalidade,situacao,data_situacao,historico,data_coleta
+2,TED-002,2024-01-20,250000.0,Ministerio da Economia,ME,IPEA,IPEA,Recursos para IPEA,Convênio,Em execução,,,
+1,TED-001,2024-01-15,150000.0,IPEA,IPEA,Universidade Federal,UFABC,Projeto de pesquisa IPEA,Transferência,Ativo,,,
