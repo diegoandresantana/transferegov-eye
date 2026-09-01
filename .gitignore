@@ -1,46 +1,33 @@
 ```
-# Python
+# Dependencies
+venv/
+.venv/
 __pycache__/
 *.pyc
 *.pyo
 *.pyd
-.Python
-*.so
-.coverage
-coverage/
-htmlcov/
 
-# Dependencies
-.venv/
-venv/
-env/
-.ENV
-pip-log.txt
-pip-delete-this-directory.txt
-.tox/
-.sitepackages/
-*.egg-info/
-.eggs/
-
-# Build artifacts
-build/
-dist/
-*.egg
+# Logs and temp files
+*.log
+*.tmp
+*.swp
+*.swo
 
 # Environment
 .env
 .env.local
-.env.*
-.env~*
+*.env.*
 
 # Editors
 .vscode/
 .idea/
-*.swp
-*.swo
-*.tmp
 
-# OS
+# Build artifacts
+dist/
+build/
+*.egg-info/
+
+# OS generated files
 .DS_Store
 Thumbs.db
 ```
