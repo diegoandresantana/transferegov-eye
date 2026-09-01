@@ -131,10 +131,9 @@ def sync_data(
     """
     try:
         if forcar_todos:
-            resultado = monitor.sincronizar_completo()
+            resultado = monitor.run_full_sync()
         else:
-            data_inicio = date.today() - timedelta(days=dias)
-            resultado = monitor.sincronizar_incremental(data_inicio)
+            resultado = monitor.run_incremental_sync(days_back=dias)
         
         return {
             "status": "success",
@@ -155,7 +154,7 @@ def get_stats(
     - **agrupar_por**: Agrupamento dos dados (mes, ano, estado, municipio)
     """
     try:
-        stats = storage.get_resumo(agrupar_por=agrupar_por)
+        stats = storage.get_summary()
         return {
             "agrupamento": agrupar_por,
             "estatisticas": stats
@@ -177,10 +176,15 @@ def export_csv(
     """
     try:
         if formato == "csv":
-            caminho_arquivo = storage.exportar_csv(
-                filtro_anos=[ano] if ano else None,
-                filtro_meses=[mes] if mes else None
-            )
+            # Obter TEDs com filtros
+            teds = storage.get_teds(limit=10000, ano=ano, mes=mes)
+            
+            # Gerar caminho do arquivo
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            caminho_arquivo = settings.EXPORTS_DIR / f"ipea_teds_{timestamp}.csv"
+            
+            # Exportar para CSV
+            storage.export_csv(caminho_arquivo, teds=teds)
             
             if os.path.exists(caminho_arquivo):
                 return FileResponse(

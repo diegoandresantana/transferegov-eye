@@ -1,10 +1,4 @@
-```gitignore
-# Python
+```
 __pycache__/
 *.pyc
-*.pyo
-*.pyd
-
-# Database
-data/processed/teds.db
 ```
