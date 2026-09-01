@@ -8,3 +8,5 @@ from src.monitor import TEDMonitor, main
 
 if __name__ == "__main__":
     main()
+
+# Arquivo atualizado para deploy no GitHub

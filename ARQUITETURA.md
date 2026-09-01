@@ -206,3 +206,5 @@ for ted in teds:
 4. **Fase 4 - Automação:**
    - [ ] Agendamento automático
    - [ ] Notificações (email/slack)
+
+

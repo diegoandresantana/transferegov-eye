@@ -196,3 +196,5 @@ git push origin main
 - [Python no Render](https://render.com/docs/deploy-fastapi)
 - [Variáveis de Ambiente](https://render.com/docs/environment-variables)
 - [Logs e Monitoramento](https://render.com/docs/logs)
+
+

@@ -236,3 +236,5 @@ async def not_found_handler(request, exc):
         status_code=404,
         content={"detail": "Endpoint não encontrado"}
     )
+
+# Arquivo atualizado para deploy no GitHub
