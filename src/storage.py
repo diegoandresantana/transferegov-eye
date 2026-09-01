@@ -409,6 +409,78 @@ class TEDStorage:
         
         return count
     
+    def get_total_value(self) -> float:
+        """
+        Obtém o valor total de todos os TEDs armazenados.
+        
+        Returns:
+            Valor total somado
+        """
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        
+        cursor.execute('SELECT COALESCE(SUM(valor), 0) FROM teds')
+        total = cursor.fetchone()[0]
+        conn.close()
+        
+        return total or 0.0
+    
+    def get_all_teds(
+        self,
+        limit: int = 100,
+        offset: int = 0,
+        beneficiary_filter: Optional[str] = None
+    ) -> List[TED]:
+        """
+        Obtém todos os TEDs (ou com filtro por beneficiário).
+        Método compatível com a API do server.py
+        
+        Args:
+            limit: Quantidade máxima de registros
+            offset: Deslocamento para paginação
+            beneficiary_filter: Filtro por nome do beneficiário
+        
+        Returns:
+            Lista de objetos TED
+        """
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        
+        query = "SELECT * FROM teds WHERE 1=1"
+        params = []
+        
+        if beneficiary_filter:
+            query += " AND (orgao_beneficiario LIKE ? OR descricao LIKE ?)"
+            params.extend([f"%{beneficiary_filter}%", f"%{beneficiary_filter}%"])
+        
+        query += " ORDER BY data_emissao DESC LIMIT ? OFFSET ?"
+        params.extend([limit, offset])
+        
+        cursor.execute(query, params)
+        rows = cursor.fetchall()
+        conn.close()
+        
+        teds = []
+        for row in rows:
+            ted = TED(
+                id=row[0],
+                numero=row[1],
+                data_emissao=row[2],
+                valor=row[3],
+                orgao_repassador=row[4],
+                codigo_orgao_repassador=row[5],
+                orgao_beneficiario=row[6],
+                codigo_orgao_beneficiario=row[7],
+                descricao=row[8],
+                modalidade=row[9],
+                situacao=row[10],
+                data_situacao=row[11],
+                data_coleta=row[12]
+            )
+            teds.append(ted)
+        
+        return teds
+    
     def get_ted_by_id(self, id_ted: int) -> Optional[TED]:
         """
         Obtém um TED pelo ID.

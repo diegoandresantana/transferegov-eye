@@ -91,8 +91,8 @@ async def trigger_sync(background_tasks: BackgroundTasks, days: int = 30):
     def run_sync():
         try:
             print(f"Iniciando sincronização dos últimos {days} dias...")
-            stats = monitor.synchronize(days=days)
-            print(f"Sincronização concluída. Encontrados: {stats['found']}, Salvos: {stats['saved']}")
+            stats = monitor.run_incremental_sync(days_back=days)
+            print(f"Sincronização concluída. Success: {stats.get('success', False)}, TEDs IPEA: {stats.get('total_ipea', 0)}")
         except Exception as e:
             print(f"Erro na sincronização: {e}")
 
