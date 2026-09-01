@@ -1,139 +1,179 @@
 """
-Cliente HTTP para consumir a API pública de dados abertos do Transferegov.
-Endpoint: https://api.transferegov.gestao.gov.br (PostgREST)
-Tabela usada: ted/plano_acao
+Cliente HTTP para a API pública de dados abertos do Transferegov (PostgREST).
+
+Base URL : https://api.transferegov.gestao.gov.br
+Módulo   : /ted/
+Docs     : https://docs.api.transferegov.gestao.gov.br/ted/
+
+Todas as tabelas seguem o protocolo PostgREST:
+  - Filtros  : ?campo=op.valor   (ex: sigla_unidade_descentralizada=eq.IPEA)
+  - Paginação: limit + offset
+  - Resposta : lista JSON pura (sem envelope {"value":...})
 """
 import time
 import logging
 from typing import Dict, List, Generator, Optional
+
 import requests
 
 logger = logging.getLogger(__name__)
 
-# Limite máximo de registros por página imposto pelo serviço
-PAGE_SIZE = 1000
+BASE_URL = "https://api.transferegov.gestao.gov.br/ted"
+PAGE_SIZE = 1000          # limite máximo da API
+RATE_LIMIT_SLEEP = 0.25  # segundos entre páginas
 
 
 class TEDApiClient:
-    """Cliente para consumir a API PostgREST do Transferegov."""
+    """Acessa a API PostgREST do Transferegov para o módulo TED."""
 
-    def __init__(self, base_url: str, timeout: int = 30, max_retries: int = 3, page_size: int = PAGE_SIZE):
-        self.base_url = base_url.rstrip('/')
+    def __init__(
+        self,
+        base_url: str = BASE_URL,
+        timeout: int = 30,
+        max_retries: int = 3,
+        page_size: int = PAGE_SIZE,
+    ):
+        self.base_url = base_url.rstrip("/")
         self.timeout = timeout
         self.max_retries = max_retries
         self.page_size = min(page_size, PAGE_SIZE)
-        self.session = requests.Session()
-        self.session.headers.update({
-            'Accept': 'application/json',
-            'Prefer': 'count=exact',   # faz a API retornar Content-Range com total
-        })
 
-    def _make_request(self, url: str, params: Optional[Dict] = None) -> Optional[Dict]:
-        """Faz GET com retry e backoff exponencial."""
+        self.session = requests.Session()
+        self.session.headers.update({"Accept": "application/json"})
+
+    # ------------------------------------------------------------------
+    # Primitivo HTTP
+    # ------------------------------------------------------------------
+
+    def _get(self, table: str, params: Dict) -> Optional[List[Dict]]:
+        """GET com retry/backoff. Retorna lista de registros ou None."""
+        url = f"{self.base_url}/{table}"
         for attempt in range(self.max_retries):
             try:
-                logger.info(f"Requisição (tentativa {attempt + 1}/{self.max_retries}): {url} params={params}")
-                response = self.session.get(url, params=params, timeout=self.timeout)
-                response.raise_for_status()
-                data = response.json()
-                # A API retorna {"value": [...], "Count": N}
-                return data
-            except requests.exceptions.RequestException as e:
-                logger.warning(f"Erro na requisição (tentativa {attempt + 1}): {e}")
+                resp = self.session.get(url, params=params, timeout=self.timeout)
+                resp.raise_for_status()
+                data = resp.json()
+                # A API pode retornar lista direta ou {"value":[], "Count":N}
+                if isinstance(data, list):
+                    return data
+                return data.get("value", [])
+            except requests.RequestException as e:
+                logger.warning(f"[{table}] tentativa {attempt+1}/{self.max_retries}: {e}")
                 if attempt < self.max_retries - 1:
                     time.sleep(2 ** attempt)
-                else:
-                    logger.error(f"Falha após {self.max_retries} tentativas: {e}")
-                    return None
+        logger.error(f"[{table}] falhou após {self.max_retries} tentativas")
         return None
 
-    def _fetch_page(self, endpoint: str, filters: Dict, offset: int) -> Optional[Dict]:
-        """Busca uma página específica com filtros PostgREST."""
-        url = f"{self.base_url}/{endpoint}"
-        params = dict(filters)
-        params['limit'] = self.page_size
-        params['offset'] = offset
-        return self._make_request(url, params)
+    # ------------------------------------------------------------------
+    # Paginação genérica
+    # ------------------------------------------------------------------
 
-    def fetch_all_paginated(self, filters: Optional[Dict] = None) -> Generator[Dict, None, None]:
-        """
-        Itera sobre todos os registros da tabela ted/plano_acao.
-        Sem filtro de órgão — retorna tudo (use com cuidado, pode ser lento).
-        """
-        yield from self._paginate("ted/plano_acao", filters or {})
-
-    def fetch_by_date_range(self, start_date: str, end_date: str) -> Generator[Dict, None, None]:
-        """
-        Busca planos de ação no intervalo de datas de início de vigência.
-
-        Args:
-            start_date: Data inicial no formato YYYY-MM-DD
-            end_date:   Data final   no formato YYYY-MM-DD
-        """
-        filters = {
-            'dt_inicio_vigencia': f'gte.{start_date}',
-            'dt_fim_vigencia':    f'lte.{end_date}',
-        }
-        yield from self._paginate("ted/plano_acao", filters)
-
-    def fetch_by_ipea(self, start_date: Optional[str] = None, end_date: Optional[str] = None) -> Generator[Dict, None, None]:
-        """
-        Busca planos de ação onde o IPEA é a unidade descentralizada.
-        Filtra diretamente na API, evitando baixar registros desnecessários.
-
-        Args:
-            start_date: Filtro opcional de data inicial (YYYY-MM-DD)
-            end_date:   Filtro opcional de data final   (YYYY-MM-DD)
-        """
-        filters: Dict = {
-            'sigla_unidade_descentralizada': 'eq.IPEA',
-        }
-        if start_date:
-            filters['dt_inicio_vigencia'] = f'gte.{start_date}'
-        if end_date:
-            filters['dt_fim_vigencia'] = f'lte.{end_date}'
-
-        yield from self._paginate("ted/plano_acao", filters)
-
-    def _paginate(self, endpoint: str, filters: Dict) -> Generator[Dict, None, None]:
-        """Itera sobre todas as páginas de um endpoint com filtros."""
+    def _paginate(self, table: str, filters: Dict) -> Generator[Dict, None, None]:
+        """Itera sobre todas as páginas de uma tabela com filtros."""
         offset = 0
-        total = None
-
         while True:
-            result = self._fetch_page(endpoint, filters, offset)
+            params = {**filters, "limit": self.page_size, "offset": offset}
+            rows = self._get(table, params)
 
-            if result is None:
-                logger.error(f"Falha ao buscar offset={offset}. Abortando paginação.")
+            if rows is None:
+                logger.error(f"[{table}] offset={offset}: requisição falhou, parando.")
+                break
+            if not rows:
                 break
 
-            records = result.get('value', [])
+            yield from rows
+            offset += len(rows)
+            logger.debug(f"[{table}] recuperados {offset} registros")
 
-            # Na primeira página, loga o total disponível
-            if total is None:
-                total = result.get('Count', len(records))
-                logger.info(f"Total de registros a buscar: {total}")
+            if len(rows) < self.page_size:
+                break  # última página
 
-            if not records:
-                break
+            time.sleep(RATE_LIMIT_SLEEP)
 
-            for record in records:
-                yield record
+    # ------------------------------------------------------------------
+    # plano_acao  —  tabela principal
+    # ------------------------------------------------------------------
 
-            offset += len(records)
-            logger.info(f"Progresso: {offset}/{total}")
+    def fetch_planos_ipea(self) -> Generator[Dict, None, None]:
+        """
+        Todos os planos de ação onde o IPEA é a unidade descentralizada
+        (ou seja, quem executa / recebe o crédito).
+        """
+        yield from self._paginate("plano_acao", {
+            "sigla_unidade_descentralizada": "eq.IPEA",
+        })
 
-            if offset >= total:
-                break
+    def fetch_planos_ipea_descentralizadora(self) -> Generator[Dict, None, None]:
+        """
+        Planos onde o IPEA é a unidade descentralizadora
+        (quem repassa para outros órgãos executarem).
+        Busca via programa cujo sigla_unidade_descentralizadora=IPEA.
+        """
+        # Primeiro pega os id_programa onde IPEA descentraliza
+        programas = list(self._paginate("programa", {
+            "sigla_unidade_descentralizadora": "eq.IPEA",
+        }))
+        for prog in programas:
+            pid = prog.get("id_programa")
+            if pid:
+                yield from self._paginate("plano_acao", {"id_programa": f"eq.{pid}"})
 
-            time.sleep(0.3)  # rate limiting respeitoso
+    # ------------------------------------------------------------------
+    # programa
+    # ------------------------------------------------------------------
+
+    def fetch_programas_ipea(self) -> Generator[Dict, None, None]:
+        """Programas onde IPEA é descentralizadora."""
+        yield from self._paginate("programa", {
+            "sigla_unidade_descentralizadora": "eq.IPEA",
+        })
+
+    # ------------------------------------------------------------------
+    # Tabelas relacionadas por id_plano_acao
+    # ------------------------------------------------------------------
+
+    def fetch_termo_execucao(self, id_plano_acao: int) -> List[Dict]:
+        rows = self._get("termo_execucao", {"id_plano_acao": f"eq.{id_plano_acao}"})
+        return rows or []
+
+    def fetch_nota_credito(self, id_plano_acao: int) -> List[Dict]:
+        rows = self._get("nota_credito", {"id_plano_acao": f"eq.{id_plano_acao}"})
+        return rows or []
+
+    def fetch_programacao_financeira(self, id_plano_acao: int) -> List[Dict]:
+        rows = self._get("programacao_financeira", {"id_plano_acao": f"eq.{id_plano_acao}"})
+        return rows or []
+
+    def fetch_metas(self, id_plano_acao: int) -> List[Dict]:
+        rows = self._get("plano_acao_meta", {"id_plano_acao": f"eq.{id_plano_acao}"})
+        return rows or []
+
+    def fetch_analise(self, id_plano_acao: int) -> List[Dict]:
+        rows = self._get("plano_acao_analise", {"id_plano_acao": f"eq.{id_plano_acao}"})
+        return rows or []
+
+    # ------------------------------------------------------------------
+    # Lote: busca todas as tabelas relacionadas de uma vez
+    # ------------------------------------------------------------------
+
+    def fetch_related(self, id_plano_acao: int) -> Dict[str, List[Dict]]:
+        """Retorna todas as tabelas relacionadas a um plano em um dict."""
+        return {
+            "termos":                self.fetch_termo_execucao(id_plano_acao),
+            "notas_credito":         self.fetch_nota_credito(id_plano_acao),
+            "programacoes":          self.fetch_programacao_financeira(id_plano_acao),
+            "metas":                 self.fetch_metas(id_plano_acao),
+        }
+
+    # ------------------------------------------------------------------
+    # Lifecycle
+    # ------------------------------------------------------------------
 
     def close(self):
-        """Fecha a sessão HTTP."""
         self.session.close()
 
     def __enter__(self):
         return self
 
-    def __exit__(self, exc_type, exc_val, exc_tb):
+    def __exit__(self, *_):
         self.close()
