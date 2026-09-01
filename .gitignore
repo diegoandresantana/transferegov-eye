@@ -1,0 +1,46 @@
+```
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+.coverage
+coverage/
+htmlcov/
+
+# Dependencies
+.venv/
+venv/
+env/
+.ENV
+pip-log.txt
+pip-delete-this-directory.txt
+.tox/
+.sitepackages/
+*.egg-info/
+.eggs/
+
+# Build artifacts
+build/
+dist/
+*.egg
+
+# Environment
+.env
+.env.local
+.env.*
+.env~*
+
+# Editors
+.vscode/
+.idea/
+*.swp
+*.swo
+*.tmp
+
+# OS
+.DS_Store
+Thumbs.db
+```
