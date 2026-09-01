@@ -3,3 +3,5 @@
 
 # config/__init__.py
 """Configurações da aplicação."""
+
+# Arquivo atualizado para deploy no GitHub

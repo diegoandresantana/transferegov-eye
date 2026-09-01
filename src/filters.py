@@ -176,3 +176,5 @@ class IPEAFilter:
                 yield ted
         
         logger.info(f"Filtrados {count} TEDs do IPEA do generator")
+
+# Arquivo atualizado para deploy no GitHub

@@ -395,3 +395,5 @@ class TEDStorage:
             'por_modalidade': por_modalidade,
             'data_geracao': datetime.now().isoformat()
         }
+
+# Arquivo atualizado para deploy no GitHub

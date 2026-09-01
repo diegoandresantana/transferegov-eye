@@ -1,5 +1,6 @@
 """
 Orquestrador principal do monitoramento TED IPEA.
+Responsável por coordenar a coleta, filtragem e armazenamento dos dados.
 """
 import logging
 from pathlib import Path
@@ -264,3 +265,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+# Arquivo atualizado para deploy no GitHub
