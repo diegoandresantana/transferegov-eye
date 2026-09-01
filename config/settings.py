@@ -67,3 +67,5 @@ class Settings:
 
         self.DB_PATH = self.PROCESSED_DIR / "ipea_teds.db"
         self.LOG_FILE = self.BASE_DIR / "monitor.log"
+
+# Arquivo atualizado para deploy no GitHub
